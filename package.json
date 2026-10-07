@@ -1,0 +1,11 @@
+{
+  "name": "giarbis",
+  "version": "0.1.0",
+  "description": "Cockpit per Claude Code: un assistente e agenti in parallelo sulla tua repo, su una mappa nel browser",
+  "private": true,
+  "type": "module",
+  "bin": { "giarbis": "bin/giarbis.mjs" },
+  "engines": { "node": ">=20" },
+  "files": ["bin/", "plancia/", "moduli/", "modelli/", "docs/", "README.md", "LICENSE"],
+  "license": "MIT"
+}

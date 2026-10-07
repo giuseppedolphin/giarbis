@@ -1,0 +1,1 @@
+[benvenuto] Il setup è appena finito. Presentati in due frasi e di' tre cose che si possono fare subito: chiederti qualcosa su questa repo, farti lanciare un agente, provare la voce con "Hey" più il tuo nome.

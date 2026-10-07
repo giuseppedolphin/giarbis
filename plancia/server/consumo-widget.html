@@ -1,0 +1,142 @@
+<!doctype html><html lang="__LINGUA__"__TEMA__><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Consumo del piano</title>
+<style>
+:root{color-scheme:dark;--ink:#fff;--ink2:#c3c2b7;--muto:#8f8e86;--linea:#2c2c2a;--traccia:#262624;
+  --s1:#3987e5;--s2:#d95926;--s3:#199e70;--s4:#c98500;--buono:#0ca30c;--attenz:#fab219;--critico:#d03b3b;
+  --tip:#1a1a19;}
+  @media (prefers-color-scheme: light){:root:where(:not([data-tema=scuro])){color-scheme:light;--ink:#0b0b0b;
+    --ink2:#52514e;--muto:#6e6d68;--linea:#e1e0d9;--traccia:#ecebe6;--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;
+    --s4:#eda100;--tip:#fcfcfb;}}
+:root[data-tema=chiaro]{color-scheme:light;--ink:#0b0b0b;--ink2:#52514e;--muto:#6e6d68;--linea:#e1e0d9;
+  --traccia:#ecebe6;--s1:#2a78d6;--s2:#eb6834;--s3:#1baf7a;--s4:#eda100;--tip:#fcfcfb;}
+html,body{margin:0;height:100%;background:transparent;color:var(--ink);font:13px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}
+body{padding:4px 6px 8px;box-sizing:border-box;overflow-x:hidden}
+.riga{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:420px){.riga{grid-template-columns:1fr}}
+.tile .et{color:var(--ink2);font-size:12px}.tile .num{font-size:28px;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.15}
+.tile .sub{color:var(--muto);font-size:12px}
+.metro{position:relative;height:8px;border-radius:4px;background:var(--traccia);margin:6px 0 4px;overflow:hidden}
+.metro i{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:var(--s1)}
+.metro b{position:absolute;top:0;bottom:0;border-radius:0 4px 4px 0;
+  background:repeating-linear-gradient(135deg,var(--s1) 0 2px,transparent 2px 5px);opacity:.75;}
+.stima{margin:12px 0 4px;padding:8px 10px;border:1px solid var(--linea);border-radius:8px}
+.stima .t{font-size:12px;color:var(--ink2);margin-bottom:2px}
+.stato{display:inline-flex;gap:6px;align-items:baseline}.stato .ico{font-weight:700}
+h3{font-size:12px;font-weight:600;color:var(--ink2);margin:12px 0 4px}
+.leg{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:12px;color:var(--ink2)}
+.leg span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px;background:var(--c)}
+svg{display:block;width:100%;overflow:visible}svg text{fill:var(--muto);font-size:11px}
+#tip{position:fixed;pointer-events:none;background:var(--tip);color:var(--ink);border:1px solid var(--linea);
+  border-radius:6px;padding:5px 8px;font-size:12px;display:none;white-space:nowrap;box-shadow:0 2px 8px #0003;}
+.nota{color:var(--muto);font-size:11px;margin-top:8px}
+details{margin-top:6px;font-size:12px}
+summary{cursor:pointer;color:var(--ink2)}
+table{border-collapse:collapse;width:100%;margin-top:4px;font-variant-numeric:tabular-nums}
+td,th{padding:2px 6px;text-align:right;border-bottom:1px solid var(--linea)}
+td:first-child,th:first-child{text-align:left}
+</style></head><body>
+<div id="app"></div><div id="tip"></div>
+<script>
+const D = __DATI__;
+const COL = { Opus: "var(--s1)", Sonnet: "var(--s2)", Haiku: "var(--s3)", Fable: "var(--s4)" };
+const $ = (s) => document.querySelector(s);
+const nf = new Intl.NumberFormat(D.lingua, { maximumFractionDigits: 1 });
+const tok = (n) => n >= 1e6 ? nf.format(n / 1e6) + " M" : n >= 1e3 ? Math.round(n / 1e3).toLocaleString(D.lingua) +
+  " k" : String(n);
+const ora = (t) => new Date(t).toLocaleTimeString(D.lingua, { timeZone: D.fuso, hour: "2-digit", minute: "2-digit" });
+const giorno = (t) => new Date(t).toLocaleDateString(D.lingua, { timeZone: D.fuso, weekday: "long", day: "numeric", month: "long" });
+const quando = (t) => (new Date(t).toDateString() === new Date().toDateString() ? "oggi" : giorno(t)) + " alle " + ora(t);
+const fa = (t) => { const m = Math.round((Date.now() - t) / 60000); return m < 1 ? "adesso" : m < 60 ? m +
+  " min fa" : Math.round(m / 60) + " ore fa"; };
+const metro = (u, proiez) => '<div class="metro" role="img" aria-label="' + u + ' per cento usato' +
+  (proiez != null ? ', stima a fine settimana ' + proiez + ' per cento' : '') + '"><i style="width:' +
+  Math.min(u, 100) + '%"></i>' + (proiez != null && proiez > u ? '<b style="left:' + Math.min(u, 100) +
+  '%;width:' + (Math.min(proiez, 100) - Math.min(u, 100)) + '%"></b>' : '') + '</div>';
+const per = (o) => D.modelli.filter((m) => o[m] > 0).map((m) => m + " " + tok(o[m])).join(" · ") || "nessun token su questo Mac";
+let h = '<div class="riga">';
+const s0 = D.stima[0];
+h += '<div class="tile"><div class="et">Finestra di 5 ore</div>' + (D.cinque ? '<div class="num">' +
+  D.cinque.u + '%</div>' + metro(D.cinque.u) + '<div class="sub">si azzera ' + quando(D.cinque.reset) +
+  '</div>' : '<div class="num">—</div><div class="sub">nessuna lettura valida per la finestra in corso</div>') +
+  '<div class="sub">qui: ' + per(D.tok5) + '</div></div>';
+h += '<div class="tile"><div class="et">Settimana del piano</div>' + (D.sette ? '<div class="num">' +
+  D.sette.u + '%</div>' + metro(D.sette.u, s0 ? s0.fine : null) + '<div class="sub">si azzera ' + quando(D.sette.reset) +
+  '</div>' : '<div class="num">—</div><div class="sub">nessuna lettura valida per la settimana in corso</div>') +
+  '<div class="sub">qui: ' + per(D.tokSett) + '</div></div>';
+h += '</div>';
+if (D.lettura && Date.now() - D.lettura > 15 * 60e3) h += '<div class="stima" style="color:var(--ink2)">Percentuali ferme alla lettura delle ' +
+  ora(D.lettura) + (new Date(D.lettura).toDateString() === new Date().toDateString() ? '' : ' di ' +
+  giorno(D.lettura)) + ': Claude Code le manda solo quando una sessione lavora, e da allora nessuna ha parlato col modello.</div>';
+if (D.stima.length) {
+  h += '<div class="stima"><div class="t">Stima (non è una misura)</div>';
+  for (const s of D.stima) {
+    const [ico, col, testo] = s.sbatti ? ["⚠", "var(--critico)", "sbatti nel limite " + quando(s.sbatti)] : s.fine >= 80 ? ["!", "var(--attenz)", "arrivi a ~" +
+      s.fine + "% a fine settimana, vicino al limite"] : ["✓", "var(--buono)", "arrivi a ~" + s.fine + "% a fine settimana"];
+    h += '<div class="stato"><span class="ico" style="color:' + col + '">' + ico + '</span><span>' +
+      s.nome.charAt(0).toUpperCase() + s.nome.slice(1) + ': ' + testo + '.</span></div><br>';
+  }
+  h = h.replace(/<br>$/, "") + '</div>';
+}
+h += '<h3>Token per giorno della settimana del piano, per modello (questo Mac)</h3><div class="leg">' +
+  D.modelli.map((m) => '<span style="--c:' + COL[m] + '">' + m + '</span>').join("") + '</div><svg id="g" height="150" style="margin-top:6px" aria-label="Token per giorno e per modello"></svg>';
+h += '<details><summary>Tabella</summary><table><tr><th>Giorno</th>' + D.modelli.map((m) => '<th>' +
+  m + '</th>').join("") + '<th>di cui output</th><th>cache letta</th></tr>' + D.giorni.map((g) => '<tr><td>' +
+  g.etichetta + '</td>' + D.modelli.map((m) => '<td>' + tok(g.per[m]) + '</td>').join("") + '<td>' +
+  tok(g.out) + '</td><td>' + tok(g.cache) + '</td></tr>').join("") + '</table></details>';
+h += '<div class="nota">' +
+  'Percentuali: l\'ultima lettura che Claude Code riporta da sé (' +
+  (D.lettura ? 'letta ' + fa(D.lettura) + ', alle ' + ora(D.lettura) : 'nessuna lettura') + '); ' +
+  'valgono per tutto il piano, anche claude.ai e altri dispositivi. ' +
+  'Token: transcript di Claude Code su questo Mac (input + scrittura in cache + output; ' +
+  'la lettura dalla cache è solo in tabella): non contano claude.ai web/app, il telefono, altri Mac, ' +
+  'le routine cloud. Metodo della stima: percentuale letta divisa per il tempo passato ' +
+  'dall\'inizio della settimana del piano, proiettata al reset; la seconda riga usa la quota ' +
+  'delle ultime 24 ore sui token locali della settimana. Aggiornato alle ' +
+  ora(D.generato) + '.</div>';
+$("#app").innerHTML = h;
+
+// barre impilate, 2px di stacco fra i segmenti, estremi arrotondati in alto
+const svg = $("#g"), W = svg.clientWidth || 500, H = 150, basso = 20, alto = 20;
+const totG = D.giorni.map((g) => D.modelli.reduce((a, m) => a + g.per[m], 0));
+const max = Math.max(1, ...totG);
+const passo = W / D.giorni.length, lb = Math.min(36, passo * 0.6);
+const y = (v) => (H - basso - alto) * v / max;
+let s = '<line x1="0" x2="' + W + '" y1="' + (H - basso) + '" y2="' + (H - basso) + '" stroke="var(--linea)"/>';
+D.giorni.forEach((g, i) => {
+  const x = i * passo + (passo - lb) / 2;
+  let base = H - basso;
+  const seg = D.modelli.filter((m) => g.per[m] > 0);
+  seg.forEach((m, k) => {
+    const hh = Math.max(1, y(g.per[m]) - (k ? 2 : 0));
+    const top = base - hh, ultimo = k === seg.length - 1;
+    s += '<path data-i="' + i + '" data-m="' + m + '" fill="' + COL[m] + '" d="' + (ultimo ? 'M' +
+      x + ',' + base + 'V' + (top + 4) + 'q0,-4 4,-4h' + (lb - 8) + 'q4,0 4,4V' + base + 'Z' : 'M' + x +
+      ',' + base + 'V' + top + 'h' + lb + 'V' + base + 'Z') + '"/>';
+    base = top - 2;
+  });
+  if (g.futuro) s += '<rect x="' + x + '" y="' + (H - basso - 24) + '" width="' + lb + '" height="24" rx="4" fill="none" stroke="var(--linea)" stroke-dasharray="3 3"/>';
+  else if (totG[i] === max && max > 1) s += '<text x="' + (x + lb / 2) + '" y="' + (base - 4) + '" text-anchor="middle" style="fill:var(--ink2)">' +
+    tok(totG[i]) + '</text>';
+  s += '<text x="' + (i * passo + passo / 2) + '" y="' + (H - 5) + '" text-anchor="middle">' + g.etichetta + '</text>';
+  s += '<rect class="hit" data-i="' + i + '" x="' + i * passo + '" y="0" width="' + passo + '" height="' +
+    H + '" fill="transparent"/>';
+});
+svg.innerHTML = s;
+const tip = $("#tip");
+svg.addEventListener("mousemove", (e) => {
+  const i = e.target.dataset?.i; if (i == null) { tip.style.display = "none"; return; }
+  const g = D.giorni[+i];
+  tip.innerHTML = '<b>' + g.etichetta + '</b>' + (g.futuro ? ' · ancora da venire' : '') + '<br>' +
+    D.modelli.map((m) => m + ': ' + tok(g.per[m])).join('<br>') + '<br><span style="color:var(--muto)">cache letta ' +
+    tok(g.cache) + '</span>';
+  tip.style.display = "block";
+  const r = tip.getBoundingClientRect();
+  tip.style.left = Math.min(e.clientX + 12, innerWidth - r.width - 4) + "px"; tip.style.top = Math.max(4, e.clientY - r.height - 8) +
+    "px";
+});
+svg.addEventListener("mouseleave", () => { tip.style.display = "none"; });
+// il tema, se la pagina che lo ospita lo manda; altrimenti quello salvato al momento del build, o il sistema
+{ const t = new URLSearchParams(location.search).get("tema"); if (t === "chiaro" || t === "scuro") document.documentElement.dataset.tema = t; } // dalla barra: ?tema=
+addEventListener("message", (e) => { const t = e.data?.tema; if (t === "chiaro" || t === "scuro") document.documentElement.dataset.tema = t; });
+setTimeout(() => location.reload(), 5 * 60e3); // il generatore riscrive il file: ogni 5 minuti si ripesca
+</script></body></html>

@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script>/* il tema prima del primo disegno, senza lampo; l'interruttore sta nella barra comune (nav.js) */ try { document.documentElement.dataset.tema = localStorage.getItem("plancia-tema") === "chiaro" ? "chiaro" : "scuro"; } catch { document.documentElement.dataset.tema = "scuro"; }</script>
+<title>Cockpit</title>
+<!-- Servita dal server della plancia su /cockpit. I colori vengono dalla palette comune (condivisi/palette.css, con gli alias del
+     cockpit in palette-cockpit.css); gli stili del cockpit stanno in stile.css, la logica nei moduli ES di questa cartella (main.js
+     li collega). Il nome dell'assistente e la frase di chiamata non sono scritti qui: main.js li mette dove c'è data-t, data-title,
+     data-placeholder o data-label, con {nome} e {chiamata} presi da /api/chi. -->
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+<link rel="stylesheet" href="/condivisi/palette.css">
+<link rel="stylesheet" href="/condivisi/palette-cockpit.css">
+<link rel="stylesheet" href="/cockpit/stile.css">
+</head>
+<body>
+<script>/* aperta da file i moduli non partono: si dice come aprirla */ if (location.protocol === "file:") document.addEventListener("DOMContentLoaded", () => { document.body.insertAdjacentHTML("afterbegin", '<p style="padding:24px;font:15px system-ui">Il cockpit funziona solo servito: lancia <code>node plancia/server/server.mjs</code> e apri l\'indirizzo che stampa, con <code>/cockpit</code> in fondo.</p>'); });</script>
+<script type="module" src="/nav.js"></script>
+<div class="setup" id="setup" hidden>
+  <span class="setup-t" id="setup-t">Configurazione in corso</span>
+  <button class="btn primario" id="setup-avvia" hidden></button>
+</div>
+<div class="app mappa-on" id="app" data-vista="mappa">
+  <header class="top">
+    <div class="brand"><i></i><span data-t="{nome}"></span></div>
+    <span class="stat" id="stat"></span><span id="j-modello"></span><span id="j-contesto"></span>
+    <span class="sp"></span>
+    <button class="toggle" id="sveglia" aria-pressed="false" data-t="«{chiamata}»" data-title="Ascolta sempre la frase «{chiamata}», poi quello che dici fino al silenzio"></button>
+    <button class="toggle" id="riavvia" title="Riavvia il server dopo una modifica al suo codice; le sessioni riprendono da dove erano">Riavvia</button>
+    <button class="toggle" id="nuova" data-title="{nome} dimentica questa conversazione e riparte da zero; gli agenti restano">Nuova conversazione</button>
+    <details class="pop" id="pop-voce"><summary class="toggle">Voce</summary>
+      <div class="pop-corpo" id="pop-voce-corpo"></div>
+    </details>
+    <button class="toggle" id="voce" aria-pressed="false" data-title="{nome} legge ad alta voce le sue risposte">Risposte a voce</button>
+  </header>
+  <nav class="schede" role="tablist">
+    <button role="tab" data-v="mappa" aria-selected="true">Mappa</button>
+    <button role="tab" data-v="sessione" aria-selected="false">Sessione</button>
+  </nav>
+
+
+  <section class="centro" data-label="{nome}">
+    <div class="sonar">
+      <canvas id="orb" width="380" height="380" title="Clicca per parlare"></canvas>
+      <div class="stato" id="orb-stato">Pronto</div>
+      <div class="voce-comando-centro" id="voce-comando-centro"></div>
+    </div>
+    <div class="flusso" id="flusso-j"><div class="colonna" id="msg-j"></div></div>
+    <div class="compositore">
+      <div class="coda-file" id="coda-j"></div>
+      <div class="box" id="box-j">
+        <button class="clip" id="clip-j" title="Allega un documento (anche trascinandolo qui)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/></svg></button>
+        <textarea id="in-j" rows="1" data-placeholder="Chiedi a {nome}, o clicca il microfono e parla"></textarea>
+        <button class="mic" id="mic-j" aria-pressed="false" title="Parla (Ctrl+Spazio)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+        <button class="invia" id="go-j" disabled title="Invia (Invio)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+      </div>
+      <div class="suggerimento">Invio manda, Maiusc+Invio va a capo, Ctrl+Spazio accende il microfono.</div>
+    </div>
+  </section>
+
+  <section class="mappa" aria-label="Mappa degli agenti">
+    <canvas id="mappa"></canvas>
+    <div class="mappa-legenda"><span><i class="l-lavora"></i>lavora</span><span><i class="l-attende"></i>aspetta te</span><span><i class="l-ferma"></i>in pausa</span><span><i class="l-errore"></i>errore</span></div>
+    <div class="mappa-com">
+      <button class="toggle" id="apri-nuovo" title="Lancia un agente con un compito">Nuovo agente</button>
+      <button class="toggle" id="m-fogli" aria-expanded="false" title="Tutti i fogli: accendili, spegnili, trovali">Fogli</button>
+      <button class="toggle" id="m-battito" data-title="{nome} propone: la proposta del battito, i contatori e l'interruttore">Battito</button>
+      <button class="toggle" id="m-centra">Centra</button>
+    </div>
+    <div class="voce-comando" id="voce-comando"></div>
+    <form class="form form-mappa" id="form-nuovo" aria-label="Nuovo agente" autocomplete="off">
+        <input id="n-nome" placeholder="Nome, per esempio ricerca-mercato" maxlength="32" required>
+        <textarea id="n-compito" placeholder="Cosa deve fare. Deve stare in piedi da solo: l'agente non vede le altre conversazioni." required></textarea>
+        <div class="riga">
+          <select id="n-modello" title="Modello dell'agente (il primo è quello predefinito)"></select>
+          <button type="button" class="btn leggero" id="annulla-nuovo">Annulla</button>
+          <button type="submit" class="btn primario">Lancia</button>
+        </div>
+      </form>
+    <div class="elenco-fogli" id="elenco-fogli" hidden><h3>Fogli sulla mappa</h3><div class="ec-lista" id="ec-lista"></div></div>
+    <div class="fogli" id="fogli"></div>
+    <div class="scheda-nodo" id="scheda-nodo" hidden></div>
+  </section>
+  <section class="pannello" aria-label="Sessione aperta">
+    <div class="testa">
+      <h2 id="p-nome">Nessuna sessione</h2>
+      <span class="meta" id="p-meta"></span><span id="p-contesto"></span><span id="p-modello"></span>
+      <button class="btn leggero" id="p-ferma" title="Interrompe il turno in corso">Ferma</button>
+      <button class="btn pericolo" id="p-rimuovi" title="Toglie l'agente dalla mappa">Rimuovi</button>
+      <button class="x" id="p-chiudi" title="Chiudi">✕</button>
+    </div>
+    <div class="conferma" id="p-conferma">Rimuovere l'agente dalla mappa? La conversazione resta salvata da Claude Code.
+      <button class="btn pericolo" id="p-conferma-si">Rimuovi</button><button class="btn leggero" id="p-conferma-no">Annulla</button></div>
+    <div class="p-timer" id="p-timer" hidden></div>
+    <div class="flusso" id="flusso-s"><div class="colonna" id="msg-s"></div></div>
+    <div class="compositore">
+      <div class="coda-file" id="coda-s"></div>
+      <div class="box" id="box-s">
+        <button class="clip" id="clip-s" title="Allega un documento (anche trascinandolo qui)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5l-8.6 8.6a5 5 0 0 1-7.1-7.1l8.6-8.6a3.3 3.3 0 0 1 4.7 4.7l-8.6 8.6a1.7 1.7 0 0 1-2.4-2.4l7.9-7.9"/></svg></button>
+        <textarea id="in-s" rows="1" placeholder="Scrivi a questo agente"></textarea>
+        <button class="mic" id="mic-s" aria-pressed="false" title="Parla"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button>
+        <button class="invia" id="go-s" disabled title="Invia"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg></button>
+      </div>
+    </div>
+  </section>
+</div>
+<div class="banner" id="banner"></div>
+<div class="voce-pill" id="voce-pill" role="status" aria-live="polite" hidden><i class="vp-dot"></i><span class="vp-t" id="vp-t"></span></div>
+<input type="file" id="file" multiple hidden>
+
+<script type="module" src="/cockpit/main.js"></script>
+</body>
+</html>

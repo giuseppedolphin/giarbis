@@ -1,0 +1,41 @@
+/* La palette della plancia, unica fonte dei colori dei due temi. Scuro è la base; il chiaro si accende con
+   data-tema="chiaro" su <html> (lo mette la barra comune, e la riga in testa a ogni pagina prima del primo disegno).
+   I colori di base sono terne RGB (--pl-x-rgb) così servono anche con la trasparenza, rgb(var(--pl-x-rgb) / .1);
+   il canvas del cockpit le legge da qui. Tutti i nomi hanno il prefisso --pl- per non scontrarsi con le variabili
+   delle pagine che li usano (dashboard comprese). Il cockpit mappa i suoi nomi storici in palette-cockpit.css. */
+:root{
+  color-scheme:dark;
+  --pl-abyss-rgb:6 20 35; --pl-deep-rgb:10 29 49; --pl-panel-rgb:14 38 64; --pl-line:#17385a; --pl-line2:#21486f;
+  --pl-text-rgb:227 238 247; --pl-text2-rgb:169 191 210; --pl-muted-rgb:111 138 163;
+  --pl-sonar-rgb:94 230 208; --pl-sonar-dim:#2a7f78; --pl-sand-rgb:242 198 109; --pl-coral-rgb:255 107 122; --pl-violet-rgb:169 155 255;
+  --pl-foglio-rgb:181 140 255; --pl-fatto-rgb:138 214 196; --pl-tu-rgb:227 238 247; --pl-punto-rgb:255 255 255;
+  --pl-su-sonar:#04201c; --pl-su-sand:#2a1d00; --pl-coral-bordo:#5a2633; --pl-coral-testo:#ff9aa5; --pl-stop-hover:#fff;
+  --pl-err-bg:#3a1620; --pl-err-bordo:#6b2a39; --pl-err-testo:#ffd9de;
+  --pl-code-rgb:4 16 28; --pl-code2:#030c16; --pl-tinta-rgb:255 255 255; --pl-ombra-rgb:0 0 0; --pl-ombra-k:1;
+  --pl-freccia:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23a9bfd2' stroke-width='1.5'/%3E%3C/svg%3E");
+  --pl-velo:rgba(2,8,16,.62); --pl-alone1:#0d2d4a; --pl-alone2:#071a2c; --pl-alone-mappa:rgba(14,48,80,.55);
+  /* barra, tendine e bolla */
+  --pl-campo:#061423; --pl-attenz:#fab219; --pl-critico:#ff6b6b;
+  --pl-opus:#3987e5; --pl-sonnet:#d95926; --pl-haiku:#199e70; --pl-fable:#c98500;
+  --pl-fondo1:rgb(var(--pl-panel-rgb)); --pl-fondo2:rgb(var(--pl-abyss-rgb));
+  /* derivati: il colore pieno di ogni terna */
+  --pl-abyss:rgb(var(--pl-abyss-rgb)); --pl-deep:rgb(var(--pl-deep-rgb)); --pl-panel:rgb(var(--pl-panel-rgb));
+  --pl-text:rgb(var(--pl-text-rgb)); --pl-text2:rgb(var(--pl-text2-rgb)); --pl-muted:rgb(var(--pl-muted-rgb));
+  --pl-sonar:rgb(var(--pl-sonar-rgb)); --pl-sand:rgb(var(--pl-sand-rgb)); --pl-coral:rgb(var(--pl-coral-rgb)); --pl-violet:rgb(var(--pl-violet-rgb));
+}
+/* tema chiaro: carta fredda, inchiostro blu notte; gli accenti scuriti per stare sopra 4,5:1 sul bianco */
+:root[data-tema=chiaro]{
+  color-scheme:light;
+  --pl-abyss-rgb:236 241 246; --pl-deep-rgb:255 255 255; --pl-panel-rgb:244 247 250; --pl-line:#d3dde7; --pl-line2:#bccad8;
+  --pl-text-rgb:16 35 56; --pl-text2-rgb:61 85 110; --pl-muted-rgb:92 112 133;
+  --pl-sonar-rgb:0 122 109; --pl-sonar-dim:#7fc8bd; --pl-sand-rgb:163 99 0; --pl-coral-rgb:198 47 71; --pl-violet-rgb:91 71 207;
+  --pl-foglio-rgb:116 56 214; --pl-fatto-rgb:46 150 128; --pl-tu-rgb:31 53 80; --pl-punto-rgb:0 122 109;
+  --pl-su-sonar:#ffffff; --pl-su-sand:#ffffff; --pl-coral-bordo:#efb3bd; --pl-coral-testo:#a8233a; --pl-stop-hover:#8c1d2e;
+  --pl-err-bg:#fdecee; --pl-err-bordo:#f1b7c0; --pl-err-testo:#8c1d2e;
+  --pl-code-rgb:241 245 249; --pl-code2:#eef2f6; --pl-tinta-rgb:16 35 56; --pl-ombra-rgb:24 45 72; --pl-ombra-k:.4;
+  --pl-freccia:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%233d556e' stroke-width='1.5'/%3E%3C/svg%3E");
+  --pl-velo:rgba(22,38,58,.38); --pl-alone1:#dbe9f4; --pl-alone2:#e6edf3; --pl-alone-mappa:rgba(255,255,255,.75);
+  --pl-campo:#f4f7fa; --pl-attenz:#b07800; --pl-critico:#c62828;
+  --pl-opus:#2a78d6; --pl-sonnet:#eb6834; --pl-haiku:#1baf7a; --pl-fable:#eda100;
+  --pl-fondo1:rgb(var(--pl-deep-rgb));
+}

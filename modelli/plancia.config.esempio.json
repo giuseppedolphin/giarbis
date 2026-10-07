@@ -1,0 +1,15 @@
+{
+  "assistente": { "nome": "Giarbis", "chiamata": ["hey giarbis"] },
+  "lingua": "it",
+  "fuso": "Europe/Rome",
+  "porta": 4747,
+  "persone": [
+    { "email": "marco@esempio.it", "slug": "marco", "nome": "Marco", "pagina": "/" }
+  ],
+  "modelli": { "default": "sonnet", "foglio": "sonnet" },
+  "battito": { "orari": ["11:00", "15:00", "18:00"], "giorni": [1, 2, 3, 4, 5], "oraMinima": "10:00" },
+  "moduli": {
+    "locale": {},
+    "todo-md": { "file": "TODO.md" }
+  }
+}

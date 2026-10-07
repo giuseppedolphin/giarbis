@@ -1,0 +1,2 @@
+Nucleo del cockpit, commit 60fd2af8f068, importato il 2026-10-07.
+Non si modifica qui: si corregge all'origine e si reimporta.
