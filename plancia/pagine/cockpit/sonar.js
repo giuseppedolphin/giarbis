@@ -15,8 +15,13 @@ function aggiornaOrb() {
   $("orb-stato").textContent = { pronto: "Pronto", ascolto: "Ti ascolto", pensa: "Ci sto lavorando", parla: "Sto parlando" }[modo];
 }
 const onde = []; let ultimaOnda = 0, fase = 0;
+// #orb sta nella colonna dell'assistente, nascosta con la mappa accesa: lì non si disegna (si guarda ogni mezzo secondo se è
+// tornato visibile); tickMic invece gira sempre, perché il livello del microfono lo leggono anche mappa e pastiglia
+let visto = false, vistoT = -Infinity;
 function disegna(t) {
   tickMic();
+  if (t - vistoT > 500) { visto = cv.checkVisibility(); vistoT = t; }
+  if (!visto) { onde.length = 0; requestAnimationFrame(disegna); return; }
   const W = cv.width, H = cv.height, c = W / 2;
   cx.clearRect(0, 0, W, H);
   const colore = modo === "ascolto" ? TEMA.coral : modo === "parla" ? TEMA.violet : TEMA.sonar;

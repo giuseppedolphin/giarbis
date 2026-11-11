@@ -6,7 +6,10 @@
 //   aggiungi({sessione, descrizione, ricorrenza, idCron?, unaVolta?})  → registra (stessa sessione + stesso idCron = aggiorna)
 //   scattato(id)       → ultimo scatto = adesso, ricalcola il prossimo; se è una tantum lo toglie
 //   togli(id)          → lo toglie dal registro (non cancella il job di CronCreate: lo fa la sessione con CronDelete)
-//   sospendi(sessione) → il processo della sessione è ripartito: i suoi job di CronCreate sono morti, i timer restano a vista ma spenti
+//   sospendi(sessione) → la sessione riparte con una conversazione nuova (senza --resume): i suoi job di CronCreate non ci sono più,
+//                        i timer restano a vista ma spenti
+//   alRiavvio()        → il server è ripartito: tutti i processi sono morti; con --resume i job tornano, ma il server non lo
+//                        sa, quindi li sospende tutti finché la sessione non li riconferma; li restituisce col prossimo scatto di prima
 //   elenco()           → tutti, con prec/prossimo aggiornati a adesso
 //   potaOrfani(nomiVivi)
 //
@@ -141,6 +144,14 @@ export function sospendi(...argomenti) {
   for (const t of tutti) if (t.sessione === sessione && !t.sospeso) { t.sospeso = true; n++; }
   if (n) salva(tutti);
   return n;
+}
+
+// All'avvio del server nessun timer è confermato, anche quelli che il registro dà ancora accesi (sospendi scatta solo con una
+// conversazione nuova): si fotografa il registro prima che elenco() rimetta in pari i prossimi scatti, poi si sospende tutto.
+export function alRiavvio() {
+  const tutti = leggi(), foto = tutti.map((t) => ({ ...t }));
+  if (tutti.some((t) => !t.sospeso)) { for (const t of tutti) t.sospeso = true; salva(tutti); }
+  return foto;
 }
 
 // Si toglie dal registro ciò che appartiene a sessioni che non esistono più.

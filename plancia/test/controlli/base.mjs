@@ -20,13 +20,13 @@ export default async function (t) {
   }
   t.ok(elenco.length > 0, "nessun file .mjs/.js trovato in plancia/");
 
-  // lo stato si scrive solo da server/stato.mjs (e dalle migrazioni); fuori dallo stato scrivono solo le to-do del modulo rd-repo
-  // dei moduli
+  // lo stato si scrive solo da server/stato.mjs (e dalle migrazioni); fuori dallo stato scrivono solo le to-do del modulo modulo-uno
+  // (dati) e i pannelli in git del modulo modulo-due
   const SCRITTURA = /\b(writeFileSync|appendFileSync|renameSync|copyFileSync|cpSync|mkdirSync|rmSync|unlinkSync|rmdirSync|createWriteStream)\b|\bfs\.(writeFile|appendFile|mkdir|rm|rename|copyFile)\(|\bwriteFile\(/;
-  const AMMESSI = new Set(["server/stato.mjs", "server/migrazioni.mjs", "moduli/rd-dashboard/pannelli.mjs"]);
+  const AMMESSI = new Set(["server/stato.mjs", "server/migrazioni.mjs", "moduli/modulo-due/pannelli.mjs"]);
   for (const f of elenco) {
     const rel = path.relative(t.plancia, f).split(path.sep).join("/");
-    if (AMMESSI.has(rel) || rel.startsWith("moduli/rd-repo/") || rel.startsWith("test/") || !/^(server|moduli)\/|^ctl\.mjs$/.test(rel)) continue;
+    if (AMMESSI.has(rel) || rel.startsWith("moduli/modulo-uno/") || rel.startsWith("test/") || !/^(server|moduli)\/|^ctl\.mjs$/.test(rel)) continue;
     readFileSync(f, "utf8").split("\n").forEach((riga, i) => {
       t.ok(!SCRITTURA.test(riga), `${rel}:${i + 1}: scrive sul disco fuori da stato.mjs: ${riga.trim().slice(0, 90)}`);
     });

@@ -2,8 +2,10 @@
 // Il nucleo non sa niente di loro: caricaModuli() li legge e raccoglie ciò che offrono. Un modulo è il default export
 // di modulo.mjs:
 //   { nome, tipiEvento?: [], tipiFoglio?: { tipo: { testo(foglio, ctx), descrizione(foglio, ctx), valida?(c, base, ctx) } },
-//     rotte?(ctx) → [rotte], segnaliBattito?(ctx) → [segnale], prompt?: { assistente?, agente?, foglio?: "file.md" },
-//     pagina?: "pagina.js", avvio?(ctx) }
+//     rotte?(ctx) → [rotte], segnaliBattito?(ctx) → [segnale], prompt?: { assistente?, agente?, foglio?, checklist?: "file.md" },
+//     pagina?: "pagina.js", avvio?(ctx), squadra?: "cartella" (una sottocartella per persona, <slug>/ruoli.json) o "ruoli.json" (uguale per tutti): la squadra, squadra.mjs,
+//     ponte?(ctx) → il trasporto del ponte con le plance delle altre persone (ponte.mjs),
+//     checklist?(ctx) → [voce]: le voci in più della checklist di primo avvio (forma in checklist.mjs) }
 // I percorsi di prompt e pagina sono relativi alla cartella del modulo. Un modulo si cerca prima in plancia/moduli, poi
 // nella cartella indicata da PLANCIA_MODULI_EXTRA (percorso assoluto): i moduli di un pacchetto non si mescolano col nucleo.
 import { existsSync } from "node:fs";

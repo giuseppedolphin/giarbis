@@ -1,1 +1,1 @@
-[primo avvio] Presentati in una frase e comincia dalla fase 1.
+[primo avvio] Presentati e comincia.

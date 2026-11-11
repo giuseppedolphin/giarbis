@@ -42,7 +42,7 @@ export function leggiLimiti() {
 
 export function sonda() {
   const r = spawnSync("claude", ["-p", "rispondi solo: ok", "--model", "haiku", "--output-format", "stream-json", "--verbose", "--tools", "", "--no-session-persistence"], {
-    cwd: config().cartella, encoding: "utf8", timeout: 90000, stdio: ["ignore", "pipe", "pipe"],
+    cwd: config().cartella, encoding: "utf8", timeout: 90000, windowsHide: true, stdio: ["ignore", "pipe", "pipe"],
   });
   for (const l of String(r.stdout || "").split("\n")) {
     try { const ev = JSON.parse(l); if (ev.type === "rate_limit_event") { registraLimiti(ev.rate_limit_info); return true; } } catch { /* righe non JSON */ }

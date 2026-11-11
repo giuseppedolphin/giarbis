@@ -91,8 +91,13 @@ export function sintesiDice(motivo) {
 
 // ---- cosa si legge ---------------------------------------------------------------------------------
 // turno = { origine, urgente }. I turni aperti da te, dalla bolla o da un agente (il riassunto di fine lavoro) si leggono;
-// quelli del battito no, salvo una proposta urgente.
+// quelli del battito no, salvo una proposta urgente; quelli del compact automatico, della squadra (l'advisor che riceve un messaggio)
+// e del ponte (un messaggio dall'altra plancia: l'urgente lo dice la pagina, bacheca.js) dei timer da ricreare al riavvio del server
+// e di Telegram (la persona non è al PC) mai.
 export function deveLeggere(turno = {}) {
+  if (turno.origine === "compact") return false;
+  if (turno.origine === "squadra" || turno.origine === "ponte" || turno.origine === "telegram") return false;
+  if (turno.origine === "timer") return false;
   if (turno.origine === "battito") return !!turno.urgente;
   return true;
 }

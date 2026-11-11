@@ -3,6 +3,7 @@
 // Tutto il resto del nucleo chiede qui: cartella di lavoro, porta, persona, chiavi, nome dell'assistente, moduli accesi.
 import { existsSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { dirStato } from "./stato.mjs";
@@ -28,7 +29,16 @@ function trovaFile() {
   }
 }
 
+const fascia = (f) => (f && /^\d\d:\d\d$/.test(f.dalle || "") && /^\d\d:\d\d$/.test(f.alle || "") ? { dalle: f.dalle, alle: f.alle } : null);
+const minuti = (v, base) => (typeof v === "number" && v >= 0 ? v : base);
 const elenco = (v, base) => (Array.isArray(v) ? v.map(String) : base);
+
+// telegram.whisper: { cli, modello, ffmpeg, secondi }; un percorso con ~ parte dalla cartella di casa, un campo assente resta al default
+const casa = (p) => (typeof p === "string" && p.trim() ? p.trim().replace(/^~(?=$|[\\/])/, os.homedir()) : undefined);
+function whisper(w) {
+  const o = w && typeof w === "object" ? w : {};
+  return { cli: casa(o.cli), modello: casa(o.modello), ffmpeg: casa(o.ffmpeg), secondi: Number(o.secondi) > 0 ? Number(o.secondi) : undefined };
+}
 
 function assistente(a = {}) {
   const nome = String(a.nome || "Assistente");
@@ -48,7 +58,7 @@ function assistente(a = {}) {
 function risolvi(grezzo, fileConfig) {
   const g = grezzo || {};
   const cartella = fileConfig ? path.dirname(fileConfig) : process.cwd();
-  const b = g.battito || {}, k = g.conservazione || {}, m = g.modelli || {};
+  const b = g.battito || {}, k = g.conservazione || {}, m = g.modelli || {}, c = g.contesto || {}, q = g.squadra || {}, pt = g.ponte || {}, tg = g.telegram || {};
   return {
     cartella, fileConfig,
     assistente: assistente(g.assistente),
@@ -67,6 +77,35 @@ function risolvi(grezzo, fileConfig) {
     conservazione: {
       allegatiGiorni: Number(k.allegatiGiorni) || 30,
       registriMB: Number(k.registriMB) || 20,
+    },
+    // limiti.corpoMB: il tetto del corpo JSON di una richiesta al server (rotte.mjs); un messaggio o un compito lungo ci passa intero
+    limiti: { corpoMB: Number(g.limiti?.corpoMB) > 0 ? Number(g.limiti.corpoMB) : 8 },
+    // compattaOltre: quota della finestra (0-1) oltre la quale a fine turno il server manda /compact (sessioni.mjs); null o assente = spento
+    contesto: { compattaOltre: Number(c.compattaOltre) > 0 && Number(c.compattaOltre) < 1 ? Number(c.compattaOltre) : null },
+    // la squadra di agenti permanenti (squadra.mjs): i ruoli li portano i moduli, qui le regole comuni del risveglio
+    squadra: {
+      intervalloMinuti: Number(q.intervalloMinuti) > 0 ? Number(q.intervalloMinuti) : 15,
+      vuotoOgniMinuti: Number(q.vuotoOgniMinuti) > 0 ? Number(q.vuotoOgniMinuti) : 120,
+      messaggiOra: Number(q.messaggiOra) > 0 ? Number(q.messaggiOra) : 6,
+      consumoMax: Number(q.consumoMax) > 0 ? Number(q.consumoMax) : 90,
+      quiete: q.quiete && /^\d\d:\d\d$/.test(q.quiete.dalle || "") && /^\d\d:\d\d$/.test(q.quiete.alle || "")
+        ? { dalle: q.quiete.dalle, alle: q.quiete.alle, intervalloMinuti: Number(q.quiete.intervalloMinuti) > 0 ? Number(q.quiete.intervalloMinuti) : null }
+        : null,
+    },
+    // il ponte con le plance delle altre persone (ponte.mjs): ogni quanti minuti si guarda la coda
+    ponte: { intervalloMinuti: Number(pt.intervalloMinuti) > 0 ? Number(pt.intervalloMinuti) : 1 },
+    // Telegram (telegram.mjs): acceso solo se lo dice la config e c'è il token; soglie in minuti, orario di lavoro e silenzio nel fuso
+    telegram: {
+      acceso: tg.acceso === true,
+      urgentiDopoMinuti: minuti(tg.urgentiDopoMinuti, 15),
+      fuoriOrarioDopoMinuti: minuti(tg.fuoriOrarioDopoMinuti, 30),
+      orario: fascia(tg.orario) ? { ...fascia(tg.orario), giorni: Array.isArray(tg.orario.giorni) ? tg.orario.giorni.map(Number) : [1, 2, 3, 4, 5] } : null,
+      silenzio: fascia(tg.silenzio),
+      specchioPonte: tg.specchioPonte !== false,
+      // gli slug delle persone che stanno nel gruppo Telegram: lo specchio porta solo i fili fra loro; assente = tutti i fili
+      gruppoPersone: Array.isArray(tg.gruppoPersone) ? tg.gruppoPersone.map(String) : null,
+      // la trascrizione locale dei vocali (trascrizione.mjs): false = spenta; assente = i percorsi predefiniti, se i file ci sono
+      whisper: tg.whisper === false ? false : whisper(tg.whisper),
     },
     moduli: g.moduli && typeof g.moduli === "object" ? g.moduli : {},
   };
@@ -99,7 +138,7 @@ export function chiSono() {
     if (cfg.persone.length) throw new Error(`COCKPIT_PERSONA non valida: "${forzata}" (${cfg.persone.map((x) => x.slug).join(", ")})`);
     return { slug: forzata, nome: forzata, email: "", pagina: "/" };
   }
-  const email = String(spawnSync("git", ["config", "user.email"], { cwd: cfg.cartella, encoding: "utf8" }).stdout || "").trim().toLowerCase();
+  const email = String(spawnSync("git", ["config", "user.email"], { cwd: cfg.cartella, encoding: "utf8", windowsHide: true }).stdout || "").trim().toLowerCase();
   const p = cfg.persone.find((x) => x.email === email);
   return p ? { ...p, nome: p.nome || "", email, pagina: p.pagina || "/" } : { slug: "", nome: "", email, pagina: "/" };
 }
@@ -134,6 +173,7 @@ export function portaServer(argv = process.argv.slice(2)) {
 export function comandoCtl() {
   const ctl = path.join(PLANCIA, "ctl.mjs");
   const rel = path.relative(config().cartella, ctl);
-  const percorso = rel && !rel.startsWith("..") && !path.isAbsolute(rel) ? rel : ctl;
+  // sempre con "/": su Windows "planciactl.mjs" in Git Bash diventa "planciactl.mjs"; "/" va bene anche in PowerShell e cmd
+  const percorso = (rel && !rel.startsWith("..") && !path.isAbsolute(rel) ? rel : ctl).split(path.sep).join("/");
   return `node ${/\s/.test(percorso) ? JSON.stringify(percorso) : percorso}`;
 }

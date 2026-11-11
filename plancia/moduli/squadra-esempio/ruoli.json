@@ -1,0 +1,26 @@
+{
+  "_nota": "Example roles. Fields: slug, nome, capo (slug of the lead, empty = a lead), mandato and metrica (one line each), modello and perche (why that model), vuotoOgniMinuti (0 = wakes up only on messages), autonomia (rodaggio = reads and proposes, operativo = acts inside its mandate), mandatoFile (the full mandate, a markdown file next to this one), colore (leads only, #rrggbb).",
+  "ruoli": [
+    {
+      "slug": "lead", "nome": "Lead", "colore": "#2f7de1", "capo": "",
+      "mandato": "Keeps the backlog of the repo short and ordered, and hands work to the researcher and the reviewer.",
+      "metrica": "open items older than two weeks, to be kept at zero",
+      "modello": "opus", "perche": "decides what the others do, so it is the one whose judgement nobody re-checks",
+      "vuotoOgniMinuti": 0, "autonomia": "rodaggio", "mandatoFile": "lead.md"
+    },
+    {
+      "slug": "researcher", "nome": "Researcher", "capo": "lead",
+      "mandato": "Answers questions about the code and the docs, with the file and the line, and writes what it learns in its notes.",
+      "metrica": "questions from the lead left unanswered",
+      "modello": "sonnet", "perche": "reads and summarises, which is the default job of the mid-size model",
+      "vuotoOgniMinuti": 0, "autonomia": "rodaggio", "mandatoFile": "researcher.md"
+    },
+    {
+      "slug": "reviewer", "nome": "Reviewer", "capo": "lead",
+      "mandato": "Reads a change before it is committed and says what could break, with the test that would show it.",
+      "metrica": "changes reviewed within the day they are asked for",
+      "modello": "sonnet", "perche": "checks a change against a checklist; the lead takes the decision",
+      "vuotoOgniMinuti": 0, "autonomia": "rodaggio", "mandatoFile": "reviewer.md"
+    }
+  ]
+}

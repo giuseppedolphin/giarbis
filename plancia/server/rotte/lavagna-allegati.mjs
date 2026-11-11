@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { salvaFile } from "../stato.mjs";
 import { registra } from "../artifax.mjs";
+import { corpoDi } from "../identita.mjs";
 import { fileDiFoglio, percorsoAmmesso, prefissiCartelle } from "../fogli-testo.mjs";
 
 const TIPI = {
@@ -24,16 +25,20 @@ export function inviaFile(c, percorso) {
   if (!file || !ESTENSIONI.test(file)) return c.json(404, { ok: false, errore: "file non trovato" });
   let corpo;
   try { corpo = readFileSync(file); } catch { return c.json(404, { ok: false, errore: "file non trovato" }); }
-  c.invia(200, TIPI[path.extname(file).slice(1).toLowerCase()] || "application/octet-stream", corpo, { "cache-control": "no-store" });
+  const est = path.extname(file).slice(1).toLowerCase();
+  // html e svg sono isolati anche aperti da soli in una scheda: origine opaca, quindi niente API (né il terminale)
+  const isola = est === "html" || est === "svg" ? { "content-security-policy": "sandbox allow-scripts allow-popups" } : {};
+  c.invia(200, TIPI[est] || "application/octet-stream", corpo, { "cache-control": "no-store", ...isola });
 }
 
-export function rotte({ cfg, cockpit }) {
+export function rotte(nucleo) {
+  const { cfg, cockpit } = nucleo;
   return [
     { metodo: "GET", percorso: /^\/lavagna\/([\w.\-]+)$/, gestore: (c) => inviaFile(c, `/lavagna/${c.parametri[0]}`) },
     {
       metodo: "POST", percorso: "/api/lavagna",
       async gestore(c) {
-        const b = await c.corpo();
+        const b = await corpoDi(c, nucleo, "da"); // chi mostra lo dice il token della sessione
         const p = String(b.percorso || "");
         if (!percorsoAmmesso(p)) return c.json(400, { ok: false, errore: `percorso non valido: ${prefissiCartelle().map((x) => `${x}<file>`).join(" o ")}` });
         cockpit.mostra(p, b.titolo, b.da);

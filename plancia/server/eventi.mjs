@@ -4,7 +4,7 @@
 export const TIPI = new Set([
   "cockpit_sessione", "system", "delta", "delta_tool", "delta_pensa", "assistant", "risultati", "fine",
   "cockpit_utente", "cockpit_errore", "cockpit_rimossa", "cockpit_azzerata", "cockpit_mostra",
-  "cockpit_foglio", "cockpit_foglio_chiuso", "cockpit_timer", "cockpit_proposte", "cockpit_setup",
+  "cockpit_foglio", "cockpit_foglio_chiuso", "cockpit_timer", "cockpit_proposte", "cockpit_setup", "cockpit_domande", "cockpit_squadra", "cockpit_ponte", "cockpit_menzioni", "cockpit_telegram", "cockpit_checklist",
 ]);
 
 const ascoltatori = new Set();

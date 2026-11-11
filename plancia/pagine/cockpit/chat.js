@@ -4,15 +4,19 @@
 import { coda, prendiAllegati } from "./allegati.js";
 import { aggiornaPallini, staccaFogli } from "./agenti-foglio.js";
 import { cerchioContesto } from "./contesto.js";
+import { htmlCopia } from "./copia.js";
 import { aggiornaFumetti } from "./fumetti.js";
 import {
-  $, NOMI_TOOL, S, STATO, assistente, autoAltezza, mostraBanner, nascondiBanner, md, selettoreModello,
+  $, NOMI_TOOL, RICARICA, S, STATO, assistente, autoAltezza, mostraBanner, nascondiBanner, md, nomeSessione, selettoreModello,
 } from "./comune.js";
 import { rendiTimerPannello } from "./timer.js";
 import { aggiornaOrb } from "./sonar.js";
+import { mostraFoto } from "./volti.js";
 import { api } from "/condivisi/api.js";
 import { su } from "/condivisi/eventi.js";
 import { durata, esc } from "/condivisi/formati.js";
+import { collegaAzioni, domandeDi, htmlDomanda, segnaLimite, suDomande } from "/condivisi/domande.js";
+import { stileColore } from "/condivisi/colori.js";
 import { memo } from "/condivisi/memo.js";
 import { ferma, sbloccaVoce, stato as statoVoce } from "/condivisi/voce-motore.js";
 
@@ -33,8 +37,16 @@ function sintesiTool(nome, input = {}) {
   return k ? `${k}: ${JSON.stringify(i[k])}`.slice(0, 200) : "";
 }
 
+// la riga di uno strumento col suo risultato non cambia più: si tiene (l'input e l'output possono essere lunghi)
+const righeTool = new WeakMap();
 function rigaTool(b, risultati) {
-  const r = risultati.get(b.id);
+  const r = risultati.get(b.id), tenuta = r && righeTool.get(b);
+  if (tenuta && tenuta.r === r) return tenuta.html;
+  const html = htmlRigaTool(b, r);
+  if (r) righeTool.set(b, { r, html });
+  return html;
+}
+function htmlRigaTool(b, r) {
   const ic = !r ? '<span class="ic run">◌</span>' : r.errore ? '<span class="ic ko">✕</span>' : '<span class="ic ok">✓</span>';
   const input = JSON.stringify(b.input, null, 2);
   const corto = input.length > 4000 ? `${input.slice(0, 4000)}\n…` : input;
@@ -62,59 +74,137 @@ function raggruppaTurni(ev) {
   return { turni, risultati };
 }
 
+// Il markdown di un blocco si converte una volta sola: i blocchi in S.eventi non cambiano più dopo l'arrivo.
+const mdCache = new WeakMap();
+function mdBlocco(b) {
+  let h = mdCache.get(b);
+  if (h === undefined) { h = md(b.text); mdCache.set(b, h); }
+  return h;
+}
+
 // Il blocco «Reasoning…» di un turno: i testi intermedi e gli strumenti, chiusi sotto un titolo.
 function htmlRagionamento(tu, n, passi, inCorso, live, risultati) {
   const strumenti = passi.filter((b) => b.type === "tool_use").length;
   const etichetta = inCorso ? '<span class="spin"></span>Reasoning…' : "See reasoning";
   const meta = [strumenti ? `${strumenti} ${strumenti === 1 ? "passaggio" : "passaggi"}` : "", tu.fine ? durata(tu.fine.durata_ms) : ""]
     .filter(Boolean).join(" · ");
-  const corpo = passi.map((b) => (b.type === "tool_use" ? rigaTool(b, risultati) : `<div class="md passo">${md(b.text)}</div>`)).join("")
+  const corpo = passi.map((b) => (b.type === "tool_use" ? rigaTool(b, risultati) : `<div class="md passo">${mdBlocco(b)}</div>`)).join("")
     + (inCorso && live && live.testo ? `<div class="md passo">${md(live.testo)}<span class="cursore"></span></div>` : "")
     || '<div class="meta">Sta leggendo il contesto…</div>';
   return `<details class="ragiona${inCorso ? " vivo" : ""}" data-k="r-${n}"><summary>${etichetta}${meta ? `<span class="rm">${meta}</span>` : ""}</summary>`
     + `<div class="passi">${corpo}</div></details>`;
 }
 
+// L'html di un turno: il tuo messaggio, il «Reasoning…», la risposta finale, gli errori e le domande nate nel turno.
+// Un turno chiuso non cambia più (salvo le domande, aggiunte a parte): il suo html si tiene, legato all'evento «fine».
+const turniChiusi = new WeakMap();
+function htmlTurno(turni, n, ctx) {
+  const tu = turni[n];
+  let corpo = tu.fine ? turniChiusi.get(tu.fine) : undefined;
+  if (corpo === undefined) {
+    corpo = htmlCorpoTurno(turni, n, ctx);
+    if (tu.fine) turniChiusi.set(tu.fine, corpo);
+  }
+  const parti = [corpo];
+  // dal primo turno, non da sempre: dopo «Nuova conversazione» la sessione ha lo stesso id e le domande vecchie restano sue
+  const da = n === 0 ? tu.t0 ?? -Infinity : tu.t0 || 0, a = n + 1 < turni.length ? turni[n + 1].t0 || Infinity : Infinity;
+  for (const q of ctx.domande) { const t = Date.parse(q.creata); if (t >= da && t < a) parti.push(htmlDomanda(q, { chat: true })); }
+  return parti.join("");
+}
+function htmlCorpoTurno(turni, n, ctx) {
+  const tu = turni[n], parti = [];
+  const ultimo = n === turni.length - 1;
+  if (tu.utente) {
+    parti.push(tu.utente.nota ? `<div class="nota"><i></i>${esc(tu.utente.nota)}</div>`
+      : `<div class="msg utente"><div class="bolla">${tu.utente.testo ? esc(tu.utente.testo) : ""}${chipAllegati(tu.utente.allegati)}</div></div>`);
+  }
+  const inCorso = !tu.fine && ultimo && ctx.vivo && !tu.errori.length;
+  // la risposta finale: i testi dopo l'ultimo strumento, solo a turno chiuso
+  let k = tu.blocchi.length;
+  if (!inCorso) while (k > 0 && tu.blocchi[k - 1].type === "text") k--;
+  const passi = tu.blocchi.slice(0, k), finale = tu.blocchi.slice(k);
+  if (passi.length || inCorso) parti.push(htmlRagionamento(tu, n, passi, inCorso, ctx.live, ctx.risultati));
+  for (const b of finale) parti.push(`<div class="msg md">${mdBlocco(b)}</div>`);
+  if (!inCorso) parti.push(htmlCopia(finale)); // «Copia» col markdown della risposta, solo a turno chiuso (copia.js)
+  for (const e of tu.errori) parti.push(`<div class="err">${esc(e)}</div>`);
+  if (tu.fine && tu.fine.errore) parti.push(`<div class="err">${esc(tu.fine.testo || "Il turno si è chiuso con un errore.")}</div>`);
+  return parti.join("");
+}
+
 // Si vede la risposta finale; tutto ciò che c'è prima (testi intermedi e strumenti) sta chiuso sotto "Reasoning…" / "See reasoning".
+// Il ridisegno è incrementale: ogni turno è un suo elemento (.turno, display:contents) e si rifà solo se il suo html è cambiato;
+// si vedono gli ultimi TURNI_VISIBILI turni, «Mostra i turni precedenti» ne aggiunge altrettanti (la cronologia dell'assistente
+// arriva a migliaia di eventi: ricostruirla tutta a ogni evento bloccava la pagina per secondi, analisi).
+const TURNI_VISIBILI = 60;
 function rendiSessione(id, contenitore) {
   const { turni, risultati } = raggruppaTurni(S.eventi.get(id) || []);
   const s = S.sessioni.get(id);
-  const vivo = s && (s.stato === "lavora" || s.stato === "avvio");
-  const live = S.live.get(id);
-  const parti = [];
-  turni.forEach((tu, n) => {
-    const ultimo = n === turni.length - 1;
-    if (tu.utente) {
-      parti.push(tu.utente.nota ? `<div class="nota"><i></i>${esc(tu.utente.nota)}</div>`
-        : `<div class="msg utente"><div class="bolla">${tu.utente.testo ? esc(tu.utente.testo) : ""}${chipAllegati(tu.utente.allegati)}</div></div>`);
-    }
-    const inCorso = !tu.fine && ultimo && vivo && !tu.errori.length;
-    // la risposta finale: i testi dopo l'ultimo strumento, solo a turno chiuso
-    let k = tu.blocchi.length;
-    if (!inCorso) while (k > 0 && tu.blocchi[k - 1].type === "text") k--;
-    const passi = tu.blocchi.slice(0, k), finale = tu.blocchi.slice(k);
-    if (passi.length || inCorso) parti.push(htmlRagionamento(tu, n, passi, inCorso, live, risultati));
-    for (const b of finale) parti.push(`<div class="msg md">${md(b.text)}</div>`);
-    for (const e of tu.errori) parti.push(`<div class="err">${esc(e)}</div>`);
-    if (tu.fine && tu.fine.errore) parti.push(`<div class="err">${esc(tu.fine.testo || "Il turno si è chiuso con un errore.")}</div>`);
-  });
+  const ctx = { vivo: s && (s.stato === "lavora" || s.stato === "avvio"), live: S.live.get(id), risultati, domande: domandeDi(id) };
+  let R = contenitore._chat;
+  if (!R || R.id !== id) { contenitore.innerHTML = ""; R = contenitore._chat = { id, quanti: TURNI_VISIBILI, pezzi: new Map() }; }
+  const primo = Math.max(0, turni.length - R.quanti);
+  const nuovi = [];
+  if (primo) nuovi.push({ k: "prima", html: `<button type="button" class="btn leggero turni-prima" data-prima>Mostra i turni precedenti (${primo})</button>` });
+  for (let n = primo; n < turni.length; n++) nuovi.push({ k: n, html: htmlTurno(turni, n, ctx) });
+
   const flusso = contenitore.parentElement;
   const inFondo = flusso.scrollHeight - flusso.scrollTop - flusso.clientHeight < 80;
-  const aperti = new Set([...contenitore.querySelectorAll("details[open]")].map((d) => d.dataset.k));
-  contenitore.innerHTML = parti.join("");
-  contenitore.querySelectorAll("details[data-k]").forEach((d) => { if (aperti.has(d.dataset.k)) d.open = true; });
+  const fuoco = document.activeElement?.closest?.("[data-dq]")?.dataset.dq;
+  const tenuti = new Set();
+  nuovi.forEach(({ k, html }, i) => {
+    const vecchio = R.pezzi.get(k);
+    let el = vecchio?.el;
+    if (!vecchio || vecchio.html !== html) {
+      el = document.createElement("div");
+      el.className = "turno";
+      el.innerHTML = html;
+      if (vecchio) {
+        // i riquadri aperti e una risposta che si sta scrivendo in una domanda sopravvivono al ridisegno del turno
+        const aperti = new Set([...vecchio.el.querySelectorAll("details[open]")].map((d) => d.dataset.k));
+        el.querySelectorAll("details[data-k]").forEach((d) => { if (aperti.has(d.dataset.k)) d.open = true; });
+        const scritte = new Map([...vecchio.el.querySelectorAll("[data-dq] .dq-lib")].filter((x) => x.value)
+          .map((x) => [x.closest("[data-dq]").dataset.dq, x.value]));
+        for (const q of el.querySelectorAll("[data-dq]")) {
+          const lib = q.querySelector(".dq-lib");
+          if (!lib) continue;
+          if (scritte.has(q.dataset.dq)) { lib.value = scritte.get(q.dataset.dq); segnaLimite(lib); }
+          if (fuoco === q.dataset.dq) lib.focus();
+        }
+        vecchio.el.replaceWith(el);
+      }
+      R.pezzi.set(k, { html, el });
+    }
+    tenuti.add(k);
+    if (contenitore.children[i] !== el) contenitore.insertBefore(el, contenitore.children[i] || null);
+  });
+  for (const [k, p] of R.pezzi) if (!tenuti.has(k)) { p.el.remove(); R.pezzi.delete(k); }
   if (inFondo) flusso.scrollTop = flusso.scrollHeight;
-  return parti.length;
+  return turni.length;
 }
+// «Mostra i turni precedenti»: la finestra si allarga e la vista resta dov'era
+function mostraPrecedenti(e) {
+  const b = e.target.closest?.("[data-prima]"), contenitore = e.currentTarget, R = contenitore._chat;
+  if (!b || !R) return;
+  const flusso = contenitore.parentElement, h = flusso.scrollHeight;
+  R.quanti += TURNI_VISIBILI;
+  rendiSessione(R.id, contenitore);
+  flusso.scrollTop += flusso.scrollHeight - h;
+}
+const azzeraChat = (contenitore) => { contenitore._chat = null; };
 
+let jDaRifare = false;
 function rendiOrchestratore() {
   if (!S.orchestratore) return;
   const sj = S.sessioni.get(S.orchestratore);
   // non si ridisegna sotto il dito mentre si sceglie
   if (sj && !document.activeElement?.classList?.contains("sel-modello")) $("j-modello").innerHTML = selettoreModello(sj);
   $("j-contesto").innerHTML = cerchioContesto(sj);
+  // la colonna dell'assistente sta in .centro, nascosta con la mappa accesa: non si ridisegna finché non si vede
+  if (!$("msg-j").checkVisibility()) { jDaRifare = true; return; }
+  jDaRifare = false;
   const n = rendiSessione(S.orchestratore, $("msg-j"));
   if (n) return;
+  azzeraChat($("msg-j"));
   $("msg-j").innerHTML = `<div class="benvenuto"><h1>Cosa facciamo?</h1><p>${esc(assistente.nome)} coordina gli agenti: gli affidi un compito, `
     + "lui lo passa a un agente che lavora in parallelo, e ti dice a che punto sono.</p>"
     + `<div class="esempi">${ESEMPI.map((e) => `<button>${esc(e)}</button>`).join("")}</div></div>`;
@@ -138,15 +228,20 @@ function rendiPannello() {
   if (!s) {
     $("p-contesto").innerHTML = "";
     $("p-nome").textContent = "Nessuna sessione";
+    $("p-nome").classList.remove("pl-ag", "nome-ag"); $("p-nome").style.cssText = ""; $("p-volto").hidden = true;
+    azzeraChat($("msg-s"));
     $("msg-s").innerHTML = '<div class="vuoto">Apri un agente dalla mappa: doppio clic sulla sua sfera.</div>';
     return;
   }
-  $("p-nome").textContent = s.ruolo === "orchestratore" ? assistente.nome : s.nome;
+  $("p-nome").textContent = nomeSessione(s);
+  // un ruolo della squadra col suo colore (condivisi/colori.js); gli altri come sempre
+  const st = s.ruolo === "squadra" ? stileColore(s.nome) : "";
+  $("p-nome").classList.toggle("pl-ag", !!st); $("p-nome").classList.toggle("nome-ag", !!st); $("p-nome").style.cssText = st; mostraFoto($("p-volto"), s.ruolo === "squadra" ? s.nome : "");
   $("p-meta").textContent = `${STATO[s.stato] || s.stato}${s.turni ? ` · ${s.turni} turni` : ""}`;
   if (!document.activeElement?.classList?.contains("sel-modello")) $("p-modello").innerHTML = selettoreModello(s);
   $("p-contesto").innerHTML = cerchioContesto(s);
-  $("p-ferma").disabled = !(s.stato === "lavora" || s.stato === "avvio");
-  $("p-rimuovi").style.display = s.ruolo === "orchestratore" ? "none" : "";
+  const turno = s.stato === "lavora" || s.stato === "avvio"; Object.assign($("p-ferma"), { disabled: !(turno || s.processo), textContent: turno || !s.processo ? "Ferma" : "Ricarica", title: turno ? "Interrompe il turno in corso" : RICARICA });
+  $("p-rimuovi").style.display = s.ruolo === "orchestratore" || s.ruolo === "squadra" ? "none" : "";
   rendiSessione(s.id, $("msg-s"));
   rendiTimerPannello();
 }
@@ -201,8 +296,7 @@ function sessioneAggiornata(ev) {
   if (S.aperta === id && ev.sessione.nonLetti) api("POST", `/api/sessioni/${id}/letta`).catch(() => {});
   if (prima && prima.stato !== ev.sessione.stato && ev.sessione.stato !== "lavora") S.live.delete(id);
   rendiStat();
-  if (S.aperta === id) rendiPannello();
-  if (id === S.orchestratore) rendiOrchestratore();
+  pianifica(id); // un ridisegno per fotogramma, come gli altri eventi
   aggiornaFumetti();
 }
 // un evento che entra nella cronologia della sessione (se la cronologia è già caricata o è visibile)
@@ -220,6 +314,10 @@ function fineParziale(ev) { // finito un tratto di testo o di turno: la risposta
 }
 
 function registraEventi() {
+  collegaAzioni($("msg-j")); collegaAzioni($("msg-s")); // i pulsanti dei riquadri delle domande
+  $("msg-j").addEventListener("click", mostraPrecedenti); $("msg-s").addEventListener("click", mostraPrecedenti);
+  addEventListener("resize", () => { if (jDaRifare) pianifica(S.orchestratore); });
+  suDomande(() => { if (S.orchestratore) pianifica(S.orchestratore); if (S.aperta) pianifica(S.aperta); });
   su("cockpit_sessione", sessioneAggiornata);
   su("cockpit_azzerata", (ev) => { S.eventi.set(ev.id, []); S.live.delete(ev.id); pianifica(ev.id); });
   su("cockpit_rimossa", (ev) => {
@@ -240,8 +338,11 @@ function registraEventi() {
   for (const tipo of ["fine", "cockpit_errore"]) su(tipo, (ev) => { accumula(ev); S.live.delete(ev.id); });
 
   // lo stream si è (ri)aperto: si rilegge lo stato delle sessioni, anche i turni chiusi mentre la pagina era chiusa
-  su("_aperto", ricarica);
-  su("_errore", () => mostraBanner("Il server non risponde. Rilancialo con node plancia/server/server.mjs: mi ricollego da solo."));
+  su("_aperto", () => { riavvioDal = 0; ricarica(); });
+  // durante un Riavvia (fino a un minuto) la caduta è attesa: niente «rilancialo»
+  su("_errore", () => mostraBanner(Date.now() - riavvioDal < 60000
+    ? "Riavvio in corso: mi ricollego da solo."
+    : "Il server non risponde. Rilancialo con node plancia/server/server.mjs: mi ricollego da solo."));
 }
 
 // il selettore del modello del «Nuovo agente»: i modelli dal server, il primo è il predefinito
@@ -274,6 +375,7 @@ function aggiornaInvia() {
   $("go-s").disabled = (!$("in-s").value.trim() && !coda.s.length) || !S.aperta;
 }
 async function inviaOrchestratore() {
+  await S.primaDiInviare("in-j"); // una dettatura in corso lì si chiude con le ultime parole (ascolto.js)
   const t = $("in-j").value.trim();
   if ((!t && !coda.j.length) || !S.orchestratore) return false;
   const allegati = prendiAllegati("j");
@@ -291,6 +393,7 @@ async function inviaOrchestratore() {
   }
 }
 async function inviaSessione() {
+  await S.primaDiInviare("in-s");
   const t = $("in-s").value.trim();
   if ((!t && !coda.s.length) || !S.aperta) return false;
   const allegati = prendiAllegati("s");
@@ -314,6 +417,7 @@ function vista(v) {
   if (innerWidth > 900 && v === "sessione") v = "mappa"; // su schermo largo mappa e sessione stanno affiancate
   $("app").dataset.vista = v;
   document.querySelectorAll(".schede button").forEach((b) => b.setAttribute("aria-selected", b.dataset.v === $("app").dataset.vista));
+  if (jDaRifare) pianifica(S.orchestratore);
 }
 
 function initModello() {
@@ -381,11 +485,13 @@ function initChat() {
 }
 
 // il Riavvia: rilancia il server (le sessioni riprendono da dove erano); lo usa anche «Avvia» del primo avvio
+let riavvioDal = 0;
 async function riavvia() {
   try {
+    riavvioDal = Date.now();
     await api("POST", "/api/riavvia");
     mostraBanner("Riavvio in corso: mi ricollego da solo.", 4000);
-  } catch (e) { mostraBanner(e.message, 5000); }
+  } catch (e) { riavvioDal = 0; mostraBanner(e.message, 5000); }
 }
 export {
   aggiornaInvia, apri, caricaEventi, chiudi, initChat, initModello, inviaOrchestratore, inviaSessione, registraEsempi, rendiPannello,

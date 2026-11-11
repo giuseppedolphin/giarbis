@@ -4,29 +4,30 @@
 // to-do e incidenti) li portano i moduli accesi con `segnaliBattito`, passati qui in `ctx.segnali`.
 // Solo se c'è almeno un segnale NUOVO (mai visto da un battito precedente) manda all'assistente un messaggio [battito]
 // (testo in plancia/prompt/battito.md); altrimenti silenzio, a costo zero. L'assistente risponde con al massimo una proposta
-// (ctl.mjs propone), che la pagina mostra nel foglio delle proposte con Sì / No / Più tardi; la risposta torna
+// (ctl.mjs propone), che la pagina mostra nella casella «Da decidere» con Sì / No / Più tardi; la risposta torna
 // all'assistente e finisce nei contatori.
 //
-// Stato (stato.mjs): battito.json (interruttore, orari, ultimo scatto, segnali già visti, registro) e proposte.json
-// (le proposte con il loro esito: fatte = tutte, accettate, rifiutate, ignorate). Il primo argomento `root` delle funzioni
+// Stato (stato.mjs): battito.json (interruttore, orari, ultimo scatto, segnali già visti, registro); le proposte in domande.json
+// (domande.mjs, con i contatori: fatte, accettate, rifiutate, ignorate). Il primo argomento `root` delle funzioni
 // d'insieme resta per compatibilità con i chiamanti di prima ed è ignorato: la cartella di stato la dice stato.mjs.
 //
-//   ctx = { cockpit, persona, trasmetti, assicuraFoglio, segnali: [info => [segnale]] }   (info = { adesso, giorno, domani, persona, cockpit })
+//   ctx = { cockpit, persona, trasmetti, segnali: [info => [segnale]] }   (info = { adesso, giorno, domani, persona, cockpit })
 //   avviaBattito(ctx)                              → il timer del server (ogni 20 s); con COCKPIT_PROVA=1 non parte
 //   statoBattito() · impostaBattito(root, {acceso, orari, giorni})   → interruttore e orari
 //   battitoOra(ctx, {forza})  → un battito adesso (ctl.mjs battito ora); forza = anche fuori orario
 //   segnali(ctx, adesso)      → i segnali di adesso, senza modello (node plancia/server/battito.mjs li stampa)
 //   nuovaProposta(ctx, {testo, perche, urgente}) · rispondi(ctx, id, "si"|"no"|"dopo") · statoProposte() · testoProposte()
+//   (le proposte stanno in domande.mjs, tipo «proposta»: qui la regola del battito e la forma di prima)
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { config } from "./config.mjs";
 import { negozio } from "./stato.mjs";
 import { statoConsumo } from "./consumo-pagina.mjs";
+import * as Domande from "./domande.mjs";
 
 const RITARDO_MAX = 15 * 60000; // un battito mancato di poco (server riavviato, assistente al lavoro) parte entro un quarto d'ora, poi si salta
 const ATTESA_AGENTE = 30 * 60000; // un agente che aspetta da più di mezz'ora conta come segnale
-const IGNORATA_DOPO = 24 * 3600000; // una proposta senza risposta per un giorno è ignorata
 const VISTI_GIORNI = 7;
 
 // ---- ore nel fuso della config ----------------------------------------------------------------
@@ -131,73 +132,43 @@ export function segnali(ctx = {}, adesso = Date.now()) {
 }
 
 // ---- proposte ---------------------------------------------------------------------------------
-const archivioP = () => negozio("proposte", { base: [] });
-const leggiP = () => { const p = archivioP().leggi(); return Array.isArray(p) ? p : []; };
-const salvaP = (p) => archivioP().scrivi(p.slice(-300));
-const aperta = (p) => p.stato === "attesa" || p.stato === "dopo";
-
-function contatori(lista) {
-  const n = (st) => lista.filter((p) => p.stato === st).length;
-  return { fatte: lista.length, accettate: n("si"), rifiutate: n("no"), ignorate: n("ignorata"), inAttesa: lista.filter(aperta).length };
-}
+// Le proposte sono domande di tipo «proposta» (domande.mjs): stanno nella casella «Da decidere» con Sì / No / Più tardi.
+// Qui resta la regola del battito (una alla volta, al massimo una per battito) e la forma di prima per /api/proposte e ctl.
 export function statoProposte() {
-  const lista = leggiP();
-  return { attuale: [...lista].reverse().find(aperta) || null, contatori: contatori(lista), recenti: lista.slice(-8).reverse(), battito: statoBattito() };
+  const p = Domande.proposte();
+  return { attuale: p.attuale, contatori: p.contatori, recenti: p.lista.slice(-8).reverse(), battito: statoBattito() };
 }
-export function testoProposte() { // per ctl.mjs foglio leggi
+export function testoProposte() {
   const s = statoProposte(), c = s.contatori;
   return [s.attuale ? `In attesa: ${s.attuale.testo} (perché: ${s.attuale.perche || "—"})` : "Nessuna proposta in attesa.",
     `Proposte fatte ${c.fatte} · accettate ${c.accettate} · rifiutate ${c.rifiutate} · ignorate ${c.ignorate}`,
     `Battito ${s.battito.acceso ? `acceso, alle ${s.battito.orari.join(", ")}` : "spento"}`,
-    ...s.recenti.filter((p) => !aperta(p)).map((p) => `- ${p.stato}: ${p.testo}`)].join("\n");
+    ...s.recenti.filter((p) => p.stato !== "attesa" && p.stato !== "dopo").map((p) => `- ${p.stato}: ${p.testo}`)].join("\n");
 }
 
-// le proposte senza risposta da più di un giorno diventano ignorate (si chiama a ogni battito e a ogni nuova proposta)
-function scadi(adesso = Date.now()) {
-  const lista = leggiP(); let n = 0;
-  for (const p of lista) if (p.stato === "attesa" && adesso - Date.parse(p.creata) > IGNORATA_DOPO) { p.stato = "ignorata"; p.risposta = new Date(adesso).toISOString(); n++; }
-  if (n) salvaP(lista);
-  return n;
-}
-
-const pulisciTesto = (t, max) => String(t ?? "").replace(/\s+/g, " ").trim().slice(0, max);
 export function nuovaProposta(ctx, c = {}) {
-  scadi();
-  const testo = pulisciTesto(c.testo, 400), perche = pulisciTesto(c.perche, 200);
+  Domande.scadi();
+  const testo = String(c.testo ?? "").replace(/\s+/g, " ").trim();
   if (!testo) throw new Error("serve il testo della proposta");
-  const lista = leggiP(), b = leggiB();
-  const inCorso = lista.find(aperta);
+  const { lista } = Domande.proposte(), b = leggiB();
+  const inCorso = lista.find((p) => p.stato === "attesa" || p.stato === "dopo");
   if (inCorso) throw new Error(`c'è già una proposta in attesa (${inCorso.id}): una alla volta`);
   const ultimoBattito = b.registro[b.registro.length - 1];
   const battito = ultimoBattito && ultimoBattito.esito === "inviato" && Date.now() - ultimoBattito.t < 3 * 3600000 ? ultimoBattito.id || ultimoBattito.slot : "";
   if (battito && lista.some((p) => p.battito === battito)) throw new Error("questo battito ha già la sua proposta: al massimo una per battito");
-  const p = { id: randomUUID().slice(0, 6), testo, perche, urgente: !!c.urgente && c.urgente !== "false", battito, creata: new Date().toISOString(), stato: "attesa", risposta: null };
-  lista.push(p); salvaP(lista);
-  ctx.assicuraFoglio?.();
-  ctx.trasmetti({ type: "cockpit_proposte", azione: "nuova", proposta: p, ...statoProposte() });
-  return p;
+  const o = ctx.cockpit?.orchestratore();
+  const q = Domande.nuova({ tipo: "proposta", testo, perche: c.perche, urgente: c.urgente, battito, sessione: c.sessione || o?.id || "" });
+  ctx.trasmetti({ type: "cockpit_proposte", azione: "nuova", proposta: Domande.comeProposta(q), ...statoProposte() });
+  return Domande.comeProposta(q);
 }
 
 // Sì → l'assistente la esegue (con le regole di sempre); No → lo sa, senza lavoro; Più tardi → torna al battito successivo, senza modello.
 export function rispondi(ctx, id, risposta) {
-  const { cockpit } = ctx;
   if (!["si", "no", "dopo"].includes(risposta)) throw new Error("risposta: si, no o dopo");
-  const lista = leggiP(), p = lista.find((x) => x.id === id);
-  if (!p) throw new Error(`nessuna proposta "${id}"`);
-  if (!aperta(p)) throw new Error(`la proposta ha già una risposta (${p.stato})`);
-  p.stato = risposta; p.risposta = new Date().toISOString();
-  salvaP(lista);
-  const o = cockpit.orchestratore();
-  if (o && risposta === "si") {
-    const testo = `[proposta] Sì a «${p.testo}». Eseguila adesso con le regole di sempre: proponi e prepara; `
-      + "niente che esce dalla cartella di lavoro (mail, messaggi, pubblicazioni) e niente commit senza un altro sì esplicito. "
-      + "Se è lunga, affidala a un agente.";
-    cockpit.invia(o.id, testo, { nota: "proposta accettata", mittente: "cockpit" });
-  }
-  if (o && risposta === "no") {
-    const testo = `[proposta] No a «${p.testo}». Non fare niente: prendine nota per le prossime proposte e chiudi il turno con una parola.`;
-    cockpit.invia(o.id, testo, { nota: "proposta rifiutata", mittente: "cockpit", origine: "battito" });
-  }
+  const { lista } = Domande.proposte();
+  if (!lista.some((p) => p.id === id)) throw new Error(`nessuna proposta "${id}"`);
+  const q = Domande.rispondi(id, risposta, "opzione");
+  const p = Domande.comeProposta(q);
   ctx.trasmetti({ type: "cockpit_proposte", azione: risposta, proposta: p, ...statoProposte() });
   return p;
 }
@@ -209,14 +180,14 @@ export function battitoOra(ctx, { forza = false, slot = "" } = {}) {
   const { cockpit } = ctx, adesso = Date.now(), r = roma(adesso);
   const b = leggiB();
   slot = slot || `${r.giorno} ${r.ora}${forza ? " (a mano)" : ""}`;
-  scadi(adesso);
-  const lista = leggiP();
+  Domande.scadi(adesso);
   const chiudiSlot = () => { if (!forza) b.ultimoSlot = slot; };
-  // «più tardi»: la proposta rimandata torna in attesa, col fumetto, senza svegliare l'assistente
-  const rimandata = lista.find((p) => p.stato === "dopo");
-  if (rimandata) {
-    rimandata.stato = "attesa"; rimandata.creata = new Date(adesso).toISOString(); salvaP(lista);
-    ctx.assicuraFoglio?.();
+  // «più tardi»: la proposta rimandata torna in attesa, nella casella, senza svegliare l'assistente
+  const ripresa = Domande.riprendiRimandata();
+  const lista = Domande.proposte().lista;
+  const aperta = (p) => p.stato === "attesa" || p.stato === "dopo";
+  if (ripresa) {
+    const rimandata = Domande.comeProposta(ripresa);
     ctx.trasmetti({ type: "cockpit_proposte", azione: "ripresa", proposta: rimandata, ...statoProposte() });
     annota(b, { slot, esito: "ripresa", nota: "proposta rimandata di nuovo in vista" }); chiudiSlot(); salvaB(b);
     return { esito: "ripresa", proposta: rimandata };
@@ -231,7 +202,7 @@ export function battitoOra(ctx, { forza = false, slot = "" } = {}) {
   const tutti = segnali(ctx, adesso), nuovi = tutti.filter((s) => !b.visti[s.chiave]);
   // le risposte arrivate dall'ultimo battito inviato (rifiutate e ignorate si contano anche qui, come promemoria)
   const ultimoInvio = [...b.registro].reverse().find((x) => x.esito === "inviato")?.t || 0;
-  const esiti = lista.filter((p) => p.risposta && Date.parse(p.risposta) > ultimoInvio && p.stato !== "attesa");
+  const esiti = lista.filter((p) => p.risposta && Date.parse(p.risposta) > ultimoInvio && !aperta(p));
   chiudiSlot();
   if (!nuovi.length) { annota(b, { slot, esito: "silenzio", nota: `${tutti.length} segnali, nessuno nuovo` }); salvaB(b); return { esito: "silenzio", motivo: "niente di nuovo", segnali: tutti.length }; }
   for (const s of tutti) b.visti[s.chiave] = adesso;

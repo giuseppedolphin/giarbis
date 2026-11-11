@@ -1,7 +1,7 @@
 // La voce dell'assistente e le impostazioni condivise da dashboard e cockpit (voce e tema scuro/chiaro), fuori da git.
 //   GET/POST /api/impostazioni · GET/POST /api/voce
-// Tre motori per la voce: "realtime" (gpt-realtime-2.1-mini, connessione aperta, voce dei modelli audio; scelto il 06/10/2026),
-// "tts" (gpt-4o-mini-tts, il primo) ed "elevenlabs" (dal 07/10/2026: modello a scelta, voci dell'account lette da /v1/voices).
+// Tre motori per la voce: "realtime" (gpt-realtime-2.1-mini, connessione aperta, voce dei modelli audio; scelto),
+// "tts" (gpt-4o-mini-tts, il primo) ed "elevenlabs" (modello a scelta, voci dell'account lette da /v1/voices).
 // Le voci disponibili cambiano col motore; per ElevenLabs sono id, e la pagina mostra i nomi (nomiVoci).
 // Le chiavi (OpenAI, ElevenLabs) si leggono con config.chiave() e non si mandano mai alla pagina. GET /api/voce?k=<chiave>
 // non può portare l'header X-Dashboard (un <audio src> non lo manda): è "locale" e si difende con la chiave che

@@ -8,6 +8,7 @@
 //                  per modello in `s.finestre`, così vale anche dopo un riavvio o un cambio di modello avanti e indietro
 //   compattazione → l'evento `system` con `subtype: "compact_boundary"` (trigger auto|manual, token di prima): i token usati
 //                  ripartono dal messaggio successivo
+//   compact automatico → daCompattare(): a fine turno, sopra `contesto.compattaOltre` della config, sessioni.mjs manda `/compact`
 export function aggiornaContesto(s, ev) {
   if (ev.type === "assistant" && !ev.parent_tool_use_id && ev.message?.usage) {
     const u = ev.message.usage, modello = ev.message.model || s.contesto?.modello || "";
@@ -29,4 +30,18 @@ export function aggiornaContesto(s, ev) {
     return true;
   }
   return false;
+}
+
+// La quota di finestra usata (0-1), o null se token o finestra non sono noti.
+export function quotaContesto(c) {
+  return c?.usati && c?.finestra ? c.usati / c.finestra : null;
+}
+
+// A fine turno: la quota se la sessione va compattata adesso, altrimenti null. Mai con la soglia spenta (null), dopo un errore,
+// dopo un turno di compact o nel primo turno dopo (mai due di fila: se il contesto è ancora alto, un altro compact non serve), o con
+// altri messaggi già in coda (il turno dopo sta per partire).
+export function daCompattare(s, { soglia = null, origine = "", errore = false, inCoda = 0, dopoCompact = false } = {}) {
+  if (!(soglia > 0 && soglia < 1) || errore || origine === "compact" || dopoCompact || inCoda > 0) return null;
+  const q = quotaContesto(s?.contesto);
+  return q != null && q > soglia ? q : null;
 }

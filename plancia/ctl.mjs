@@ -8,7 +8,7 @@
 // il ctl su una copia di prova, e senza un server lì il ctl fallisce invece di ripiegare) → server.json dello stato di default della cartella del ctl (se c'è e il processo è vivo:
 // un ctl lanciato da una copia o da un pacchetto in un'altra cartella va sul proprio server) → COCKPIT_PORTA → porta della
 // config (il default sta in config.mjs). Così una COCKPIT_PORTA ereditata dalla plancia viva non vince su un server trovato
-// per cartella. Chi lancia un agente o gli scrive viene registrato come genitore o mittente (COCKPIT_SESSIONE).
+// per cartella. Chi lancia un agente o gli scrive viene registrato come genitore o mittente (COCKPIT_SESSIONE, provato da COCKPIT_TOKEN).
 //
 // Comandi dei moduli: plancia/moduli/<nome>/ctl.mjs esporta `comandi` ({ "foglio todo": fn, … }), `aiuto`, `opzioni`.
 // Ogni funzione riceve UN solo argomento, il contesto: { args, opz, api, uso, errore, cfg, io, persona, leggiFile,
@@ -28,10 +28,12 @@ const NOME = cfg.assistente.nome;
 const AIUTO = [
   "lista                                          gli agenti (senza l'orchestratore)",
   'crea <nome> "<compito>" [--modello <alias>]    lancia un agente (senza --modello: il default del server)',
+  "crea|invia <nome> [\"…\"] --file <file>|-        il compito o il messaggio da un file (- = stdin), accodato al testo: per i testi lunghi (su Windows la riga di comando sta sotto i ~32.000 caratteri)",
   "modello <nome> [<alias>]                       mostra o cambia il modello di una sessione (anche dell'assistente)",
   'invia <nome> "<messaggio>"                     scrive a una sessione',
   "guarda <nome> [n=15]                           gli ultimi eventi di una sessione",
-  "ferma <nome>                                   interrompe il turno in corso",
+  "ferma <nome>                                   interrompe il turno in corso; a sessione ferma chiude il processo, che riparte al messaggio dopo",
+  "rimuovi <nome> | rimuovi --fermi               toglie dalla mappa un agente fermo o in attesa · tutti gli agenti fermi in un colpo (mai l'assistente)",
   'mostra <file.html> ["titolo"]                  apre il file sulla lavagna del cockpit',
   'foglio html <file.html> "titolo"               un file HTML in un foglio sulla mappa',
   'foglio immagine <file> "titolo"                png, jpg, svg, gif, webp',
@@ -45,10 +47,11 @@ const AIUTO = [
   'progresso piano "passo1|passo2|…" | avanti ["passo"] | <fatti>/<totale> ["cosa faccio"]   (agenti)',
   'timer aggiungi "cosa controlli" <cron|"ogni 30 minuti"> [--id <id-cron>] [--una-volta]   (agenti)',
   "timer scattato <id> | togli <id> | lista",
-  `propone "proposta" --perche "una riga" [--urgente]   (${NOME}, al battito)`,
+  'domanda "<testo breve>" --contesto "da dove arriva\\ncosa è verificato\\ncosa cambia con ogni risposta" [--opzioni "Sì|No"] [--urgente] [--foglio <id>]   una domanda alla persona, nella casella «Da decidere», col «Perché te lo chiedo» (fino a 3 righe, 400 battute)',
+  "domande [--tutte] | domande ritira <id>          le domande aperte (e le ultime chiuse) · ritira una tua domanda che non serve più",
+  `propone "proposta" --perche "una riga" [--urgente]   (${NOME}, al battito: una domanda Sì / No / Più tardi)`,
   `battito [stato]|on|off|ora|orari "11:00,13:00"|giorni "1,2,3,4,5"   il battito di ${NOME}`,
   "proposte                                       la proposta in attesa, i contatori, le ultime risposte",
-  "setup fatto                                    primo avvio: la config è scritta, la pagina mostra Avvia",
   "cartella [stato|lavagna|allegati]              il percorso della cartella di stato del server con cui parla il ctl",
   '--descrizione "una riga" su mostra e foglio: cosa contiene; --porta <n>: un server su un\'altra porta',
 ];
@@ -60,9 +63,13 @@ const aiutoCompleto = (moduli) => [
   `  adesso il ctl parla col server sulla porta ${PORTA} (${DA_DOVE})`,
 ].join("\n");
 
+// Esce lanciando Uscita, presa in fondo al file: il processo finisce da solo col codice giusto. Niente process.exit
+// dopo un fetch: su Windows (Node 24) chiude un handle di undici a metà e Node muore sull'assert di srcwinasync.c.
+class Uscita extends Error {}
 function esci(messaggio, codice = 1) {
   console.error(messaggio);
-  process.exit(codice);
+  process.exitCode = codice;
+  throw new Uscita(messaggio);
 }
 const uso = (testo) => esci(`uso: ${testo}`);
 const errore = (testo) => esci(`errore: ${testo}`);
@@ -81,11 +88,12 @@ async function caricaModuli() {
   }
   return out;
 }
-const moduli = await caricaModuli();
+// i comandi della squadra (ctl/squadra.mjs), del ponte (ctl/ponte.mjs), di Telegram (ctl/telegram.mjs) e della checklist (ctl/setup.mjs) hanno la stessa forma di quelli dei moduli, ma sono del nucleo
+const moduli = [{ nome: "squadra", ...(await import("./ctl/squadra.mjs")) }, { nome: "ponte", ...(await import("./ctl/ponte.mjs")) }, { nome: "telegram", ...(await import("./ctl/telegram.mjs")) }, { nome: "setup", ...(await import("./ctl/setup.mjs")) }, ...(await caricaModuli())];
 
 // ───── opzioni: un solo parser. Un'opzione vale solo se è nota (le altre restano testo, come "--" dentro un messaggio) ─────
-const CON_VALORE = new Set(["descrizione", "modello", "altezza", "generatore", "pagina", "tabella", "max", "file", "titolo", "id", "perche", "porta"]);
-const BOOLEANE = new Set(["urgente", "una-volta"]);
+const CON_VALORE = new Set(["descrizione", "modello", "altezza", "generatore", "pagina", "tabella", "max", "file", "titolo", "id", "perche", "porta", "opzioni", "foglio", "contesto"]);
+const BOOLEANE = new Set(["urgente", "una-volta", "tutte", "fermi"]);
 for (const m of moduli) {
   for (const o of m.opzioni?.valore || []) CON_VALORE.add(o);
   for (const o of m.opzioni?.booleane || []) BOOLEANE.add(o);
@@ -130,7 +138,7 @@ if (process.env.COCKPIT_STATO && DA_DOVE === "porta della config") { PORTA = 0; 
 const BASE = `http://127.0.0.1:${PORTA}`;
 
 async function richiesta(metodo, percorso, { corpo, grezzo, tipo } = {}) {
-  const intestazioni = { "x-dashboard": "1" };
+  const intestazioni = { "x-dashboard": "1", ...(process.env.COCKPIT_TOKEN ? { "x-cockpit-token": process.env.COCKPIT_TOKEN } : {}) }; // il token dice al server chi sei
   let dati;
   if (grezzo) { dati = grezzo; intestazioni["content-type"] = tipo || "application/octet-stream"; }
   else if (corpo) { dati = JSON.stringify(corpo); intestazioni["content-type"] = "application/json"; }
@@ -194,6 +202,17 @@ const leggiFile = (file) => {
   if (!file || !existsSync(f)) errore(`non trovo ${file || "il file"}`);
   return { sorgente: f, buffer: readFileSync(f) };
 };
+
+// Il testo di crea e invia: gli argomenti e, con --file, il contenuto del file (--file -: lo stdin) accodato dopo una riga vuota.
+// Serve per i testi lunghi: su Windows una riga di comando sta sotto i ~32.000 caratteri (CreateProcess), un file no.
+function testoConFile(parole) {
+  const t = parole.join(" ");
+  if (!opz.file) return t;
+  const dalFile = (opz.file === "-" ? readFileSync(0, "utf8") : leggiFile(opz.file).buffer.toString("utf8")).replace(/^﻿/, "");
+  return t.trim() ? `${t}
+
+${dalFile}` : dalFile;
+}
 
 // → il nome con cui il file sta nella lavagna. Il server lo riceve con POST /api/lavagna/carica?nome=… (corpo grezzo).
 async function mandaInLavagna(file, nomeForzato) {
@@ -361,6 +380,40 @@ async function battito(args) {
   } else uso('ctl.mjs battito [stato]|on|off|ora|orari "11:00,13:00"|giorni "1,2,3,4,5"');
 }
 
+// ───── le domande alla persona: la casella «Da decidere» (server/domande.mjs) ─────
+const DA = (q) => `${q.da.nome}${q.da.ruolo === "foglio" ? " (foglio)" : ""}`;
+const rigaDomanda = (q) => `${q.id}  ${ora(q.creata)}  ${DA(q).padEnd(14)} ${q.urgente ? "URGENTE " : ""}${q.tipo === "testo" ? "(dal testo) " : q.tipo === "proposta" ? "(proposta) " : ""}${q.testo}`
+  + (q.opzioni.length ? `  [${q.opzioni.join(" | ")}]` : "") + (q.contesto ? `\n      ${q.contestoRicavato ? "(ricavato) " : ""}${q.contesto.replace(/\n/g, "\n      ")}` : "");
+async function domandaNuova(args) {
+  const testo = args.join(" ").trim();
+  if (!testo || testo === "ritira") uso('ctl.mjs domanda "una domanda, frase breve" --contesto "da dove arriva\\ncosa è verificato\\ncosa cambia con ogni risposta" [--opzioni "Sì|No"] [--urgente] [--foglio <id>]');
+  const j = await api("POST", "/api/domande", { testo, opzioni: opz.opzioni || "", urgente: !!opz.urgente, foglio: opz.foglio || "", contesto: opz.contesto || "", sessione: IO });
+  const q = j.domanda;
+  console.log(`domanda ${q.id} nella casella «Da decidere»${q.opzioni.length ? ` (${q.opzioni.join(" / ")})` : ""}${q.urgente ? ", urgente: anche a voce" : ""}. `
+    + "La risposta ti arriva come messaggio [domanda]; non serve ripeterla nel testo.");
+  // Il contesto è di fatto obbligatorio: senza, la domanda parte lo stesso (chi la usa
+  // senza non si rompe, e il server ripiega su una riga ricavata) ma l'avviso dice di ritirarla e rifarla.
+  if (!String(opz.contesto || "").trim()) {
+    console.error(`ATTENZIONE: domanda ${q.id} senza --contesto. La persona la legge senza sapere da dove arriva e rischia di fraintenderla.\n`
+      + `Se dal testo non si capisce da sola, ritirala (domande ritira ${q.id}) e rifalla con --contesto "da dove arriva\\ncosa è già verificato\\ncosa succede con ciascuna risposta" (fino a 3 righe, 400 battute).`);
+  }
+}
+async function domande([sub, id]) {
+  if (sub === "ritira") {
+    if (!id) uso("ctl.mjs domande ritira <id>");
+    const j = await api("POST", `/api/domande/${encodeURIComponent(id)}/ritira`, { sessione: IO });
+    return console.log(`domanda ${j.domanda.id} ritirata`);
+  }
+  if (sub) uso("ctl.mjs domande [--tutte] | domande ritira <id>");
+  const j = await api("GET", `/api/domande${opz.tutte ? "?tutte=1" : ""}`), c = j.contatori;
+  const righe = [j.aperte.length ? `aperte (${j.aperte.length}):` : "nessuna domanda aperta", ...j.aperte.map((q) => `  ${rigaDomanda(q)}`)];
+  if (j.rimandate.length) righe.push(`rimandate al prossimo battito: ${j.rimandate.map((q) => q.testo).join(" · ")}`);
+  if (opz.tutte) righe.push("chiuse:", ...j.chiuse.map((q) => `  ${q.id}  ${q.stato.padEnd(9)} ${DA(q).padEnd(14)} ${q.testo}${q.risposta ? `  → ${q.risposta}` : ""}`));
+  righe.push(`fatte ${c.fatte} · risposte ${c.risposte} (in chat ${c.inChat}) · ritirate ${c.ritirate} · ignorate ${c.ignorate} · dal testo ${c.dalTesto}`
+    + ` · risposta in chat chiude: ${j.impostazioni.chiudeConChat ? "sì" : "solo le «dal testo»"}`);
+  console.log(righe.join("\n"));
+}
+
 const COMANDI = {
   async lista() {
     const { sessioni, modelli: m } = await api("GET", "/api/sessioni");
@@ -368,9 +421,9 @@ const COMANDI = {
   },
   async crea(args) {
     const [nome, ...compito] = args;
-    if (!nome) uso('ctl.mjs crea <nome> "<compito>" [--modello <alias>]');
+    if (!nome) uso('ctl.mjs crea <nome> "<compito>" [--modello <alias>] [--file <file>|-]');
     // senza --modello decide il server
-    const { sessione: s } = await api("POST", "/api/sessioni", { nome, compito: compito.join(" "), modello: opz.modello, genitore: IO });
+    const { sessione: s } = await api("POST", "/api/sessioni", { nome, compito: testoConFile(compito), modello: opz.modello, genitore: IO });
     console.log(`agente "${s.nome}" lanciato (${nomeModello(await modelli(), s.modello)})`);
   },
   async modello([nome, alias]) {
@@ -390,8 +443,8 @@ const COMANDI = {
       : `${j.sessione.nome} sta lavorando: passa a ${pendente} a fine turno, senza interromperlo`);
   },
   async invia([nome, ...testo]) {
-    if (!nome) uso('ctl.mjs invia <nome> "<messaggio>"');
-    await api("POST", `/api/sessioni/${await sessione(nome)}/messaggio`, { testo: testo.join(" "), mittente: IO });
+    if (!nome) uso('ctl.mjs invia <nome> "<messaggio>" [--file <file>|-]');
+    await api("POST", `/api/sessioni/${await sessione(nome)}/messaggio`, { testo: testoConFile(testo), mittente: IO });
     console.log(`messaggio mandato a "${nome}"`);
   },
   async guarda([nome, n = "15"]) {
@@ -402,8 +455,31 @@ const COMANDI = {
   },
   async ferma([nome]) {
     if (!nome) uso("ctl.mjs ferma <nome>");
-    await api("POST", `/api/sessioni/${await sessione(nome)}/ferma`);
-    console.log(`turno di "${nome}" interrotto`);
+    const { esito } = await api("POST", `/api/sessioni/${await sessione(nome)}/ferma`);
+    console.log(esito === "chiuso" ? `"${nome}" era ferma: processo chiuso, riparte al prossimo messaggio` : esito === "nessun processo" ? `"${nome}" non ha un processo acceso` : `turno di "${nome}" interrotto`);
+  },
+  // Toglie dalla mappa: un agente che non sta lavorando, o con --fermi tutti gli agenti (non quelli di foglio) fermi, in attesa o in errore.
+  async rimuovi([nome]) {
+    const { sessioni } = await api("GET", "/api/sessioni");
+    const lavora = (s) => s.stato === "lavora" || s.stato === "avvio";
+    const togli = (s) => api("POST", `/api/sessioni/${encodeURIComponent(s.id)}/rimuovi`, { da: IO });
+    // un agente toglie solo quelli che ha creato lui (il server lo controlla); l'assistente e chi lancia il ctl a mano, tutti
+    const io = sessioni.find((x) => IO && (x.nome === IO || x.id === IO));
+    const mio = (s) => !io || io.ruolo === "orchestratore" || s.genitore === io.nome;
+    if (opz.fermi) {
+      const fermi = sessioni.filter((s) => s.ruolo === "agente" && !lavora(s) && mio(s));
+      for (const s of fermi) await togli(s);
+      console.log(fermi.length ? `tolti ${fermi.length} agenti fermi: ${fermi.map((s) => s.nome).join(", ")}` : "nessun agente fermo da togliere");
+      return;
+    }
+    if (!nome) uso("ctl.mjs rimuovi <nome> | rimuovi --fermi");
+    const voluto = String(await risolvi(nome)).toLowerCase();
+    const s = sessioni.find((x) => x.nome === voluto || x.id === voluto);
+    if (!s) errore(`nessuna sessione "${nome}"`);
+    if (s.ruolo === "orchestratore") errore(`${s.nome} è l'orchestratore: non si rimuove`);
+    if (lavora(s)) errore(`"${s.nome}" sta lavorando: prima ${comandoCtl()} ferma ${s.nome}, poi rimuovi`);
+    await togli(s);
+    console.log(`"${s.nome}" tolto dalla mappa (la conversazione resta salvata da Claude Code)`);
   },
   async mostra([file, ...titolo]) {
     if (!file) uso('ctl.mjs mostra <file.html> ["titolo"]');
@@ -429,9 +505,11 @@ const COMANDI = {
     const testo = args.join(" ").trim();
     if (!testo) uso('ctl.mjs propone "cosa propongo" --perche "una riga" [--urgente]');
     const j = await api("POST", "/api/proposte", { testo, perche: opz.perche, urgente: !!opz.urgente });
-    console.log(`proposta ${j.proposta.id} sul foglio «${NOME} propone»${j.proposta.urgente ? " (urgente: anche a voce)" : ""}`);
+    console.log(`proposta ${j.proposta.id} nella casella «Da decidere»${j.proposta.urgente ? " (urgente: anche a voce)" : ""}`);
   },
   battito,
+  domanda: domandaNuova,
+  domande,
   async proposte() {
     const j = await api("GET", "/api/proposte"), c = j.contatori;
     console.log([
@@ -439,11 +517,6 @@ const COMANDI = {
       `fatte ${c.fatte} · accettate ${c.accettate} · rifiutate ${c.rifiutate} · ignorate ${c.ignorate}`, descriviBattito(j.battito),
       ...j.recenti.map((p) => `  ${p.stato.padEnd(8)} ${ora(p.creata)}  ${p.testo}`),
     ].join("\n"));
-  },
-  async setup([quale]) {
-    if (quale !== "fatto") uso("ctl.mjs setup fatto");
-    await api("POST", "/api/setup/fatto");
-    console.log("setup segnalato: la pagina mostra il pulsante per avviare");
   },
   async cartella([quale = "stato"]) {
     // la cartella del server con cui si parla (/api/chi); un server vecchio o spento non la dice: si risponde con quella locale
@@ -471,4 +544,4 @@ async function esegui() {
   return esci(`comando sconosciuto: ${cmd}\n${aiutoCompleto(moduli)}`);
 }
 
-await esegui();
+await esegui().catch((e) => { if (!(e instanceof Uscita)) throw e; });

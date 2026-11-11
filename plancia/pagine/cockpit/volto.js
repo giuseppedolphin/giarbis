@@ -16,6 +16,7 @@
 import { ascolto, livelloMic, sv } from "./ascolto.js";
 import { COL, RIDOTTO, S, TEMA } from "./comune.js";
 import { api } from "/condivisi/api.js";
+import { sferaVetro } from "./volti-disegno.js";
 import { analizzatoreVoce, stato } from "/condivisi/voce-motore.js";
 
 const DURATA = { sorpreso: 1300, preoccupato: 8000, contento: 3000 };
@@ -140,29 +141,6 @@ const mix = (a, b, k) => a.map((x, i) => x + (b[i] - x) * k);
 const coloreDi = (tinta) => tinta === "coral" ? TEMA.coral : tinta === "violet" ? TEMA.violet : tinta === "sand" ? COL.attende : TEMA.sonar;
 // ambra = --sand, come «attende»
 
-function sferaVetro(cx, x, y, r, col, fioco, t, alone) {
-  const core = mix(col.map((v) => v * 0.12), [4, 14, 24], 0.5);
-  const g = cx.createRadialGradient(x, y - r * 0.1, r * 0.1, x, y, r);
-  g.addColorStop(0, rgba(core)); g.addColorStop(0.7, rgba(mix(core, col, 0.22))); g.addColorStop(1, rgba(col, 0.95 - fioco * 0.4));
-  cx.save(); cx.shadowColor = rgba(col, 0.75 * (1 - fioco)); cx.shadowBlur = alone;
-  cx.beginPath(); cx.arc(x, y, r, 0, Math.PI * 2); cx.fillStyle = g; cx.fill(); cx.restore();
-  cx.save(); cx.beginPath(); cx.arc(x, y, r - 1, 0, Math.PI * 2); cx.clip();
-  for (let i = 0; i < 2; i++) {
-    const k = (t / 3600 + i / 2) % 1;
-    cx.beginPath();
-    cx.arc(x, y, r * (0.15 + 0.85 * k), 0, Math.PI * 2);
-    cx.strokeStyle = rgba(col, (1 - k) * 0.22 * (1 - fioco));
-    cx.lineWidth = 1.2;
-    cx.stroke();
-  }
-  cx.restore();
-  cx.beginPath();
-  cx.arc(x, y, r * 0.86, Math.PI * 1.08, Math.PI * 1.38);
-  cx.strokeStyle = "rgba(255,255,255,.22)";
-  cx.lineWidth = Math.max(1, r * 0.04);
-  cx.lineCap = "round";
-  cx.stroke();
-}
 // un occhio ad anello di luce; ad arco se contento; tagliato da una palpebra inclinata se preoccupato
 function occhio(cx, ex, ey, w, h, e, side) {
   if (e.arco > 0.5) { cx.beginPath(); cx.arc(ex, ey + h * 0.28, w * 0.55, Math.PI * 1.12, Math.PI * 1.88); cx.stroke(); return; }

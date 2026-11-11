@@ -1,5 +1,5 @@
 // I fogli sopra la mappa: lo stato sta in fogli.json (fuori da git) così sopravvive al ricarico e lo vedono tutte le schede.
-// Un foglio ha un tipo; i tipi del nucleo sono html, immagine, tabella e proposte, gli altri li offre un modulo
+// Un foglio ha un tipo; i tipi del nucleo sono html, immagine e tabella, gli altri li offre un modulo
 // (modulo.tipiFoglio). Un tipo è { testo(foglio, ctx), descrizione(foglio, ctx), valida?(c, base, ctx), misure?: {w, h},
 // titolo?: "…", contesto?(foglio, ctx) → righe in più per l'agente di foglio }. `valida` controlla i campi propri del tipo:
 // lancia un errore se non vanno, e restituisce i campi da scrivere sul foglio (oppure li scrive su ctx.foglio, il foglio in
@@ -8,7 +8,6 @@
 //   const fogli = creaFogli({ cfg, persona, cockpit, moduli })
 //   fogli.elenco() · fogli.trova(id) · fogli.crea(c, { registrare = true }) → il foglio (nuovo o aggiornato)
 //   fogli.chiudi(id) · fogli.agente(id) → la sessione dell'agente del foglio (la crea al primo clic)
-//   fogli.assicuraProposte() → il foglio «proposte» del battito: uno solo, lo crea o lo riaccende
 //   fogli.contestoFoglio(id) → il testo che l'agente di foglio riceve a ogni avvio del processo
 //   fogli.testo(id, max) → il solo testo del foglio, troncato · fogli.osservaLavagna() → ricarica i fogli quando il file cambia
 //   fogli.registraCartella(prefisso, dir) · fogli.tipi (il registro)
@@ -61,7 +60,6 @@ function registroTipi(moduli) {
     html: { ...TIPI_NUCLEO.html, valida: validaPercorso },
     immagine: { ...TIPI_NUCLEO.immagine, valida: validaPercorso },
     tabella: { ...TIPI_NUCLEO.tabella, valida: validaTabella },
-    proposte: { ...TIPI_NUCLEO.proposte },
   };
   for (const m of moduli) {
     for (const [nome, tipo] of Object.entries(m.tipiFoglio || {})) {
@@ -78,8 +76,8 @@ export function creaFogli({ cfg, persona = {}, cockpit, moduli = [] }) {
   const ctxTipi = { cfg, persona, tipi };
   const leggi = () => { const c = memoria.leggi(); return Array.isArray(c) ? c : []; };
   const salva = (c) => memoria.scrivi(c);
-  // i tipi senza file, oltre alla tabella, che Artifax può registrare (non «proposte»: è un foglio del battito)
-  impostaTipi(Object.keys(tipi).filter((t) => !["html", "immagine", "tabella", "proposte"].includes(t)));
+  // i tipi senza file, oltre alla tabella, che Artifax può registrare
+  impostaTipi(Object.keys(tipi).filter((t) => !["html", "immagine", "tabella"].includes(t)));
   for (const m of moduli) for (const [prefisso, dir] of Object.entries(m.cartelle || {})) registraCartella(prefisso, dir);
 
   const elenco = () => leggi();
@@ -177,16 +175,6 @@ export function creaFogli({ cfg, persona = {}, cockpit, moduli = [] }) {
     ].filter(Boolean).join("\n");
   }
 
-  // Il foglio «proposte» del battito è uno solo; se manca lo si crea, se è spento si riaccende.
-  function assicuraProposte() {
-    const f = leggi().find((x) => x.tipo === "proposte");
-    if (f) return f.attiva === false ? crea({ id: f.id, attiva: true }, { registrare: false }) : f;
-    return crea({
-      tipo: "proposte", titolo: `${cfg.assistente.nome} propone`, da: cfg.assistente.slug,
-      descrizione: `La proposta del battito di ${cfg.assistente.nome}, con Sì / No / Più tardi, e i contatori`, w: 380, h: 340,
-    }, { registrare: false });
-  }
-
   // Il file di un foglio html o immagine cambiato su disco (lo ha modificato il suo agente, o chiunque): il foglio si ricarica da solo.
   function osservaLavagna() {
     const ritardi = new Map();
@@ -208,5 +196,5 @@ export function creaFogli({ cfg, persona = {}, cockpit, moduli = [] }) {
     } catch (e) { console.error("fogli: niente ricarica automatica:", e.message); return null; }
   }
 
-  return { tipi, elenco, trova, crea, chiudi, agente, testo, contestoFoglio, assicuraProposte, osservaLavagna, registraCartella };
+  return { tipi, elenco, trova, crea, chiudi, agente, testo, contestoFoglio, osservaLavagna, registraCartella };
 }

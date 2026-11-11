@@ -17,7 +17,7 @@ export function rotte({ cfg, porta, cockpit, chiudiServer }) {
           cockpit.chiudiTutto();
           chiudiServer();
           spawn(process.execPath, [process.argv[1], String(porta)], {
-            cwd: cfg.cartella, detached: true, stdio: "ignore", env: { ...process.env, NO_OPEN: "1", COCKPIT_ATTESA: "1" },
+            cwd: cfg.cartella, detached: true, stdio: "ignore", windowsHide: true, env: { ...process.env, NO_OPEN: "1", COCKPIT_ATTESA: "1" },
           }).unref();
           process.exit(0);
         }, 300);

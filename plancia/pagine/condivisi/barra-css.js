@@ -7,6 +7,8 @@ export const CSS_BARRA = `
   border-radius:999px; margin-right:6px; display:grid; place-items:center;}
 .rdnav button.tema:hover{color:var(--pl-text)}
 .rdnav button.tema svg{width:16px;height:16px}
+.rdnav button.stile{font-size:12px;font-weight:600;letter-spacing:-.3px}
+.rdnav button.stile[aria-pressed=true]{color:var(--pl-sonar);border-color:var(--pl-sonar-dim)}
 .rdnav{
   position:sticky; top:0; z-index:2147482000; height:var(--nav-h,44px); display:flex; align-items:center; gap:6px; padding:0 14px;
   background:var(--pl-deep); border-bottom:1px solid var(--pl-line); font:13px/1 system-ui,-apple-system,"Segoe UI",sans-serif; color:var(--pl-text);}

@@ -139,11 +139,13 @@ console.log(JSON.stringify({
   obbligatorioAssente: prova({ x: "non-c-e.md" }),
   obbligatorioOggetto: prova({ x: { file: "non-c-e.md" } }),
   relativo: prova({ x: "../fuori/extra.md" }),
+  lista: prova({ x: [${JSON.stringify(frammento)}, { file: "non-c-e.md", opzionale: true }, "../fuori/extra.md"] }),
 }));`);
       t.ok(/base A\n\nFRAMMENTO-ASSOLUTO per A/.test(r.assoluto), `frammento assoluto in coda: ${JSON.stringify(r.assoluto)}`);
       t.ok(r.opzionaleAssente === "base A\n", `opzionale assente: nessun errore: ${JSON.stringify(r.opzionaleAssente)}`);
       t.ok(/^ERRORE/.test(r.obbligatorioAssente) && /^ERRORE/.test(r.obbligatorioOggetto), "obbligatorio assente: errore");
       t.ok(/FRAMMENTO-ASSOLUTO/.test(r.relativo), "frammento relativo fuori dal modulo (path.resolve)");
+      t.ok(/base A\n\nFRAMMENTO-ASSOLUTO per A\n\nFRAMMENTO-ASSOLUTO per A\n$/.test(r.lista), `lista di frammenti in ordine, l'opzionale assente saltato: ${JSON.stringify(r.lista)}`);
     }
 
     // ───── N3: --chrome da config ─────
@@ -182,7 +184,7 @@ console.log(JSON.stringify({ cfg: config().chrome, args: k.argomenti(k.orchestra
     {
       const cwd = dir();
       const corpo = `const { componi, skillLavagna } = await import(${JSON.stringify(url("server/prompt.mjs"))});
-const v = { assistente: "A", persona: "P", ctl: "ctl", modello_default: "m", mappa: "mappa", assistente_slug: "a", battito_orari: "", battito_giorni: "" };
+const v = { assistente: "A", persona: "P", ctl: "ctl", modello_default: "m", mappa: "mappa", quaderno: "quaderno.md", assistente_slug: "a", battito_orari: "", battito_giorni: "" };
 console.log(JSON.stringify({ testo: componi("assistente", v, []), skill: skillLavagna() }));`;
       const senza = esegui(cwd, corpo);
       t.ok(!/skills\/lavagna/.test(senza.testo) && /file html autosufficiente/.test(senza.testo) && /cartella lavagna/.test(senza.testo), "senza skill: le tre righe essenziali");

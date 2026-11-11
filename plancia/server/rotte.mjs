@@ -2,15 +2,16 @@
 //   percorso  "/api/fogli/:id/chiudi" (i :parametri valgono un segmento) oppure una RegExp sul percorso
 //   guardia   "dashboard" (default per /api/…: vuole l'header X-Dashboard: 1) | "locale" (basta l'Host giusto)
 //   gestore   async (c) → c = { req, res, url, parametri, corpo(), grezzo(limite), json(codice, oggetto), invia(codice, tipo, dati) }
+//   corpo() e grezzo() senza limite valgono fino a `limiteJson` di creaRouter (oltre: 413)
 // Se il gestore restituisce un oggetto e non ha risposto, il router manda 200 { ok: true, ...oggetto }; se lancia,
 // 400 { ok: false, errore }. L'Host diverso da 127.0.0.1:<porta> o localhost:<porta> prende 403 prima di tutto
 // (il «DNS rebinding»: un sito esterno che punta il suo DNS qui). X-Dashboard non lo può mandare un sito esterno
 // senza un preflight CORS, che qui non viene mai concesso.
 import { Readable } from "node:stream";
 
-const LIMITE_JSON = 1e6; // 1 MB per i corpi JSON
+const LIMITE_JSON = 8e6; // 8 MB per i corpi JSON, se chi crea il router non dice altro (il server passa limiti.corpoMB della config)
 
-class ErroreHttp extends Error {
+export class ErroreHttp extends Error {
   constructor(codice, messaggio) { super(messaggio); this.codice = codice; }
 }
 
@@ -32,7 +33,7 @@ function compila(percorso) {
   };
 }
 
-export function creaRouter({ porta }) {
+export function creaRouter({ porta, limiteJson = LIMITE_JSON }) {
   const rotte = [];
   const hostAmmessi = new Set([`127.0.0.1:${porta}`, `localhost:${porta}`]);
 
@@ -50,7 +51,7 @@ export function creaRouter({ porta }) {
       res.writeHead(codice, { "content-type": "application/json; charset=utf-8" });
       res.end(JSON.stringify(oggetto));
     };
-    const grezzo = (limite = LIMITE_JSON) => new Promise((ok, no) => {
+    const grezzo = (limite = limiteJson) => new Promise((ok, no) => {
       const pezzi = []; let tot = 0, finito = false;
       req.on("data", (d) => {
         if (finito) return;
@@ -62,7 +63,13 @@ export function creaRouter({ porta }) {
             res.writeHead(413, { "content-type": "application/json; charset=utf-8", connection: "close" });
             res.end(JSON.stringify({ ok: false, errore: "corpo troppo grande" }));
           }
-          res.on("finish", () => req.destroy());
+          // prima FIN e corpo scartato, poi la chiusura: un destroy subito, col corpo non letto, su Windows manda un RST
+          // e il client perde la risposta (ECONNRESET)
+          res.on("finish", () => {
+            req.socket.end(); req.resume();
+            req.once("end", () => req.destroy());
+            setTimeout(() => req.destroy(), 2000).unref();
+          });
           return no(new ErroreHttp(413, "corpo troppo grande"));
         }
         pezzi.push(d);
@@ -71,7 +78,7 @@ export function creaRouter({ porta }) {
       req.on("error", no);
     });
     const corpo = async () => {
-      const testo = (await grezzo(LIMITE_JSON)).toString("utf8");
+      const testo = (await grezzo(limiteJson)).toString("utf8");
       try { const o = JSON.parse(testo || "{}"); return o && typeof o === "object" && !Array.isArray(o) ? o : {}; } catch { return {}; }
     };
     const invia = (codice, tipo, dati, intestazioni = {}) => {

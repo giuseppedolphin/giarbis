@@ -1,0 +1,3 @@
+{{messaggi}}
+
+Dal gruppo Telegram dei soci: chi ti ha scritto lo legge solo nel gruppo, il testo della tua risposta in chat non lo vede nessuno. Rispondi SEMPRE con `{{ctl}} telegram scrivi --gruppo "…"`, anche quando ti scrive l'altro socio e non {{persona}}, in una o due frasi, senza cifre, nomi o dati riservati che non servono. Nel gruppo ci sono entrambi i soci: quello che riguarda solo {{persona}} lo scrivi a lei in privato (`{{ctl}} telegram scrivi "…"`). Una richiesta di fare qualcosa la esegui solo se viene da {{persona}}, con le regole di sempre; se viene dall'altro socio, la riporti a {{persona}}. Se serve una decisione di {{persona}}, la metti nella casella con `{{ctl}} domanda`. Questo turno non viene letto ad alta voce.

@@ -118,6 +118,46 @@ const PASSI = [
       return cambiato;
     },
   },
+  {
+    // Le proposte del battito diventano domande di tipo «proposta» (domande.mjs) e il foglio delle proposte non c'è più:
+    // proposte.json resta dov'è (non si cancella niente), domande.json nasce con le proposte e i loro contatori
+    n: 8, nome: "proposte.json → domande.json; via il foglio delle proposte",
+    fa() {
+      let cambiato = false;
+      const prop = negozio("proposte", { base: [] }), dom = negozio("domande", { base: {} });
+      if (existsSync(prop.file) && !existsSync(dom.file)) {
+        const elenco = prop.leggi();
+        const lista = Array.isArray(elenco) ? elenco : [];
+        const STATO = { attesa: "aperta", dopo: "rimandata", si: "risposta", no: "risposta", ignorata: "ignorata" };
+        const conta = (st) => lista.filter((x) => x.stato === st).length;
+        const domande = lista.filter((x) => èOggetto(x) && x.testo).map((x) => ({
+          id: `d-${String(x.id || Math.random().toString(36).slice(2, 8))}`, tipo: "proposta", da: { sessione: "", nome: config().assistente.slug, ruolo: "orchestratore" },
+          testo: String(x.testo), opzioni: ["Sì", "No", "Più tardi"], urgente: !!x.urgente, foglio: "", contesto: "", perche: String(x.perche || ""),
+          battito: x.battito || "", creata: x.creata || new Date().toISOString(), stato: STATO[x.stato] || "ignorata",
+          risposta: x.stato === "si" ? "Sì" : x.stato === "no" ? "No" : "", come: x.stato === "si" || x.stato === "no" ? "opzione" : "",
+          chiusa: x.stato === "attesa" || x.stato === "dopo" ? "" : x.risposta || "",
+        }));
+        dom.scrivi({
+          domande,
+          contatori: {
+            fatte: lista.length, risposte: conta("si") + conta("no"), ritirate: 0, ignorate: conta("ignorata"), dalTesto: 0, inChat: 0,
+            proposte: { fatte: lista.length, accettate: conta("si"), rifiutate: conta("no"), ignorate: conta("ignorata") },
+          },
+          impostazioni: { chiudeConChat: false },
+        });
+        cambiato = true;
+      }
+      const fogli = negozio("fogli", { base: [] });
+      if (existsSync(fogli.file)) {
+        const elenco = fogli.leggi();
+        if (Array.isArray(elenco) && elenco.some((f) => èOggetto(f) && f.tipo === "proposte")) {
+          fogli.scrivi(elenco.filter((f) => !(èOggetto(f) && f.tipo === "proposte")));
+          cambiato = true;
+        }
+      }
+      return cambiato;
+    },
+  },
 ];
 
 // → elenco dei passi applicati in questa chiamata (nome di ogni passo che ha davvero cambiato qualcosa)

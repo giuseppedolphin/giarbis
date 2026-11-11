@@ -2,7 +2,7 @@
 // foglio senza leggerne il markup (`ctl.mjs foglio leggi`, `ctl.mjs fogli`) e al server per dare una descrizione a chi
 // non la scrive. Legge solo file dentro le cartelle note: la lavagna dello stato e quelle che un modulo registra.
 //
-//   testoFoglio(foglio, ctx)       → testo semplice: html → testo, tabella → righe, immagine → metadati, proposte → riepilogo;
+//   testoFoglio(foglio, ctx)       → testo semplice: html → testo, tabella → righe, immagine → metadati;
 //                                    i tipi dei moduli passano da ctx.tipi[tipo].testo(foglio, ctx)
 //   descrizioneDi(foglio, ctx)     → la descrizione scritta da chi l'ha creato, oppure ricavata (primo titolo dell'html, titolo)
 //   fileDiFoglio(percorso)         → il file di un foglio html o immagine, "" se il percorso non è ammesso
@@ -19,7 +19,6 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { config } from "./config.mjs";
 import { percorsoStato } from "./stato.mjs";
-import { testoProposte } from "./battito.mjs";
 
 const ENTITA = {
   amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", egrave: "è", eacute: "é", agrave: "à", ograve: "ò", ugrave: "ù",
@@ -107,7 +106,6 @@ export const TIPI_NUCLEO = {
     testo: (f) => [`${(f.colonne || []).join(" | ")}`, ...(f.righe || []).map((r) => r.join(" | "))].join("\n"),
     descrizione: (f) => unaRiga(`${f.titolo || "Tabella"}: ${(f.righe || []).length} righe, colonne ${(f.colonne || []).slice(0, 6).join(", ")}`),
   },
-  proposte: { testo: () => testoProposte(config().cartella), descrizione: () => "" },
 };
 
 const tipoDi = (f, ctx) => (ctx?.tipi || TIPI_NUCLEO)[f.tipo] || null;

@@ -3,8 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script>/* il tema prima del primo disegno, senza lampo; l'interruttore sta nella barra comune (nav.js) */ try { document.documentElement.dataset.tema = localStorage.getItem("plancia-tema") === "chiaro" ? "chiaro" : "scuro"; } catch { document.documentElement.dataset.tema = "scuro"; }</script>
+<script>/* il tema prima del primo disegno, senza lampo; l'interruttore sta nella barra comune (nav.js) */ try { document.documentElement.dataset.tema = localStorage.getItem("plancia-tema") === "chiaro" ? "chiaro" : "scuro"; if (localStorage.getItem("plancia.stile") === "cupertino") document.documentElement.dataset.stile = "cupertino"; } catch { document.documentElement.dataset.tema = "scuro"; }</script>
 <title>Cockpit</title>
+<link rel="icon" href="/favicon.ico" sizes="32x32"><link rel="icon" href="/favicon.svg" type="image/svg+xml"><link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <!-- Servita dal server della plancia su /cockpit. I colori vengono dalla palette comune (condivisi/palette.css, con gli alias del
      cockpit in palette-cockpit.css); gli stili del cockpit stanno in stile.css, la logica nei moduli ES di questa cartella (main.js
      li collega). Il nome dell'assistente e la frase di chiamata non sono scritti qui: main.js li mette dove c'è data-t, data-title,
@@ -15,7 +16,9 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
 <link rel="stylesheet" href="/condivisi/palette.css">
 <link rel="stylesheet" href="/condivisi/palette-cockpit.css">
+<link rel="stylesheet" href="/condivisi/palette-cupertino.css">
 <link rel="stylesheet" href="/cockpit/stile.css">
+<link rel="stylesheet" href="/cockpit/visita.css">
 </head>
 <body>
 <script>/* aperta da file i moduli non partono: si dice come aprirla */ if (location.protocol === "file:") document.addEventListener("DOMContentLoaded", () => { document.body.insertAdjacentHTML("afterbegin", '<p style="padding:24px;font:15px system-ui">Il cockpit funziona solo servito: lancia <code>node plancia/server/server.mjs</code> e apri l\'indirizzo che stampa, con <code>/cockpit</code> in fondo.</p>'); });</script>
@@ -64,12 +67,31 @@
 
   <section class="mappa" aria-label="Mappa degli agenti">
     <canvas id="mappa"></canvas>
-    <div class="mappa-legenda"><span><i class="l-lavora"></i>lavora</span><span><i class="l-attende"></i>aspetta te</span><span><i class="l-ferma"></i>in pausa</span><span><i class="l-errore"></i>errore</span></div>
+    <div class="mappa-legenda" title="Lo stato è il colore della sfera; gli agenti della squadra hanno la sfera nel colore del loro ruolo (sfumature del capo per gli esecutori) e lo stato sull'alone e sull'anello"><span><i class="l-lavora"></i>lavora</span><span><i class="l-attende"></i>aspetta te</span><span><i class="l-ferma"></i>in pausa</span><span><i class="l-errore"></i>errore</span></div>
+    <div class="mappa-zoom" role="group" aria-label="Zoom della mappa">
+      <button class="toggle" id="m-zoom-piu" title="Avvicina" aria-label="Avvicina">+</button>
+      <button class="toggle" id="m-zoom-meno" title="Allontana" aria-label="Allontana">−</button>
+    </div>
     <div class="mappa-com">
       <button class="toggle" id="apri-nuovo" title="Lancia un agente con un compito">Nuovo agente</button>
       <button class="toggle" id="m-fogli" aria-expanded="false" title="Tutti i fogli: accendili, spegnili, trovali">Fogli</button>
-      <button class="toggle" id="m-battito" data-title="{nome} propone: la proposta del battito, i contatori e l'interruttore">Battito</button>
+      <button class="toggle" id="m-battito" hidden aria-expanded="false" data-title="Il battito di {nome}: acceso o spento, orari, ultimo scatto e ultima proposta">Battito</button>
+      <button class="toggle" id="m-squadra" hidden aria-expanded="false" title="La squadra di agenti permanenti: accesa o spenta, ogni quanto si sveglia ciascuno">Squadra</button>
+      <button class="toggle" id="m-bacheca" hidden aria-expanded="false" title="La chat di gruppo della squadra, i messaggi diretti fra gli agenti e il ponte con l'altra plancia">Bacheca</button>
+      <button class="toggle" id="m-avvio" aria-expanded="false" title="La checklist di primo avvio: cosa serve perché tu sia operatore, verificato dal codice">Avvio</button>
+      <button class="toggle" id="m-pulisci" hidden disabled>Pulisci</button>
+      <button class="toggle" id="m-terminale" title="Una shell vera nella cartella di lavoro, sul tuo Mac">Terminale</button>
+      <button class="toggle" id="m-riordina" hidden title="Rimette le sfere spostate a mano dove le mette la disposizione automatica">Riordina</button>
       <button class="toggle" id="m-centra">Centra</button>
+      <button class="toggle" id="m-visita" hidden>Visita guidata</button>
+    </div>
+    <button class="m-cestino" id="m-cestino" hidden aria-label="Togli l'agente dalla mappa"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg></button>
+    <div class="m-conferma" id="m-conferma" role="alertdialog" hidden></div>
+    <div class="terminale" id="terminale" role="dialog" aria-label="Terminale" hidden>
+      <div class="tm-testa" id="tm-testa"><div class="tm-schede" id="tm-schede"></div>
+        <button class="tm-btn" id="tm-nuova" title="Un'altra shell" aria-label="Un'altra shell">+</button>
+        <button class="tm-btn" id="tm-nascondi" title="Nascondi: le shell restano aperte" aria-label="Nascondi il terminale">—</button></div>
+      <div class="tm-corpo" id="tm-corpo"></div>
     </div>
     <div class="voce-comando" id="voce-comando"></div>
     <form class="form form-mappa" id="form-nuovo" aria-label="Nuovo agente" autocomplete="off">
@@ -81,12 +103,22 @@
           <button type="submit" class="btn primario">Lancia</button>
         </div>
       </form>
+    <div class="battito-pannello" id="battito-pannello" hidden></div>
+    <div class="battito-pannello squadra-pannello" id="squadra-pannello" hidden></div>
+    <div class="battito-pannello checklist-pannello" id="checklist-pannello" role="dialog" aria-label="Checklist di primo avvio" hidden></div>
+    <div class="bacheca" id="bacheca" role="dialog" aria-label="Bacheca della squadra" hidden>
+      <div class="bc-testa"><div class="bc-schede" role="tablist"><button type="button" role="tab" data-scheda="bacheca">Bacheca</button><button type="button" role="tab" data-scheda="diretti">Diretti</button></div>
+        <button class="x" id="bc-chiudi" title="Chiudi" aria-label="Chiudi la bacheca">✕</button></div>
+      <div class="bc-lista" id="bc-lista"></div>
+      <form class="bc-scrivi" id="bc-scrivi" autocomplete="off"><textarea id="bc-testo" rows="1" placeholder="Scrivi alla squadra; @ruolo sveglia quel ruolo"></textarea><span class="bc-opz" id="bc-opz" hidden><label><input type="checkbox" id="bc-domanda"> domanda</label><label><input type="checkbox" id="bc-urgente"> urgente</label></span><button type="submit" class="btn primario">Invia</button></form>
+    </div>
     <div class="elenco-fogli" id="elenco-fogli" hidden><h3>Fogli sulla mappa</h3><div class="ec-lista" id="ec-lista"></div></div>
     <div class="fogli" id="fogli"></div>
     <div class="scheda-nodo" id="scheda-nodo" hidden></div>
   </section>
   <section class="pannello" aria-label="Sessione aperta">
     <div class="testa">
+      <img class="volto-foto" id="p-volto" alt="" hidden>
       <h2 id="p-nome">Nessuna sessione</h2>
       <span class="meta" id="p-meta"></span><span id="p-contesto"></span><span id="p-modello"></span>
       <button class="btn leggero" id="p-ferma" title="Interrompe il turno in corso">Ferma</button>

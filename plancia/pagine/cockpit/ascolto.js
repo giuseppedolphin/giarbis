@@ -1,7 +1,7 @@
-// L'ascolto: dettatura a mano, la frase di chiamata che accende il comando, il feedback del microfono (livello, pastiglia,
-// esito) e cosa succede quando la scheda perde o riprende il possesso di microfono e voce. Il livello, il bip, il possesso e
-// la coda della voce stanno in condivisi/ (microfono.js, voce-motore.js): qui c'è solo ciò che è del cockpit.
-import { aggiornaInvia, inviaOrchestratore, inviaSessione } from "./chat.js";
+// L'ascolto: dettatura a mano (invio solo col pulsante), la frase di chiamata che accende il comando, il feedback del microfono
+// (livello, pastiglia, esito) e cosa succede quando la scheda perde o riprende il possesso di microfono e voce. Il livello, il
+// bip, il possesso e la coda della voce stanno in condivisi/ (microfono.js, voce-motore.js): qui c'è solo ciò che è del cockpit.
+import { aggiornaInvia, inviaOrchestratore } from "./chat.js";
 import { $, S, assistente, autoAltezza, fermo, mostraBanner } from "./comune.js";
 import { aggiornaOrb } from "./sonar.js";
 import { costruisciChiamata, fraseChiamata } from "/condivisi/chiamata.js";
@@ -9,9 +9,9 @@ import { memo } from "/condivisi/memo.js";
 import { apriLivello, avviaPossesso, bip, colpetto, livello, possiedo, prendi, suPossesso } from "/condivisi/microfono.js";
 import { sintesiDice, sospendi } from "/condivisi/voce-motore.js";
 
-// Soglie della voce, in ms: quiete dopo l'ultimo risultato prima di chiudere la dettatura (e inviare), la stessa quando
-// l'ultimo risultato è già finale.
-const SILENZIO_FINE_MS = 900, QUIETE_FINALE_MS = 500;
+// Soglie della dettatura a mano, in ms: silenzio dopo cui si mette in pausa da sola (senza inviare), attesa delle ultime
+// parole quando la chiudi, sotto quanto una ripartenza del riconoscimento conta come «lampo» (tre di fila = microfono guasto).
+const INATTIVO_MS = 180000, CHIUSURA_MS = 1500, LAMPO_MS = 1000;
 const Riconoscimento = window.SpeechRecognition || window.webkitSpeechRecognition;
 // la frase di chiamata dell'assistente (prefisso + nome, varianti dalla config): si legge al momento, il nome arriva da /api/chi
 const chiamata = () => costruisciChiamata(assistente);
@@ -20,7 +20,7 @@ const chiamata = () => costruisciChiamata(assistente);
 // Regola generale: l'assistente non parla mentre registri. Il microfono è «aperto» con la dettatura a mano accesa o con un
 // comando dopo la frase di chiamata in corso; l'ascolto a riposo della sola frase non conta. Aperto: la voce va in pausa e il
 // livello si misura (sincronizzaVoce).
-let ascolto = null; // il riconoscimento della dettatura a mano
+let ascolto = null; // la dettatura a mano in corso: { inp, mic, rec, base, finale, provv, chiusa, attese, … }
 const sv = { on: memo.get("sveglia", "0") === "1", rec: null, attivo: false, comando: null, timer: 0 };
 const micAperto = () => !!ascolto || !!sv.comando;
 let micEraAperto = false;
@@ -66,52 +66,121 @@ async function pastigliaEsito(invio, vuoto) {
   else pastiglia("err", "Non sono riuscito a inviarlo", false, 5000);
 }
 
-// ---- dettatura a mano ------------------------------------------------------------------------
-function avviaAscolto(inp, mic, invio) {
+// ---- dettatura a mano: registri finché vuoi, mandi tu --------------------------------------------
+// Le pause non inviano niente: il testo cresce nel campo e, quando il browser chiude il riconoscimento
+// per conto suo (silenzio lungo, rete), si riparte da solo tenendo quello che c'è. Un altro clic sul microfono (o sulla sfera,
+// Ctrl+Spazio, Esc) la mette in pausa e il testo resta da rileggere; scrivere nel campo la ferma senza toccare ciò che scrivi;
+// dopo INATTIVO_MS senza parole si ferma da sola. Invia (pulsante o Invio) passa da finisciDettatura: chiude il riconoscimento,
+// aspetta le ultime parole (al massimo CHIUSURA_MS) e solo dopo manda.
+function scriviDettato(d) {
+  $(d.inp).value = d.base + d.finale + d.provv;
+  autoAltezza($(d.inp));
+  aggiornaInvia();
+  pastigliaTesto($(d.inp).value);
+}
+function rimandaInattivo(d) {
+  clearTimeout(d.inattivo);
+  d.inattivo = setTimeout(() => fermaDettatura("inattivo"), INATTIVO_MS);
+}
+
+function avviaAscolto(inp, mic) {
   if (!Riconoscimento) { mostraBanner("Questo browser non ha la dettatura: usa Chrome.", 5000); return; }
-  if (ascolto) { ascolto.stop(); return; }
+  if (ascolto) { fermaDettatura("pausa"); return; }
   if (!possiedo()) prendi();
   svPausa(); // la voce non si butta: va in pausa quando il microfono risulta aperto (sincronizzaVoce)
+  const d = ascolto = { inp, mic, rec: null, base: "", finale: "", provv: "", chiusa: "", ignora: false, attese: [], sentito: false, lampi: 0, inattivo: 0 };
+  $(mic).setAttribute("aria-pressed", "true");
+  pastiglia("ascolto", "Ti ascolto. Le pause non inviano: premi Invia quando hai finito.", true);
+  if (matchMedia("(hover: hover)").matches) $(inp).focus(); // così Invio manda; su touch niente tastiera che salta su
+  rimandaInattivo(d);
+  avviaRiconoscimento(d);
+  aggiornaOrb();
+  sincronizzaVoce();
+}
+
+// Un riconoscimento (il browser ne chiude uno dopo un silenzio lungo): riparte dal testo che c'è nel campo.
+function avviaRiconoscimento(d) {
+  const v = $(d.inp).value.trim();
+  d.base = v ? `${v} ` : "";
+  d.finale = d.provv = "";
+  d.avviato = Date.now();
+  const riprova = (ms) => setTimeout(() => { if (ascolto === d && !d.chiusa && !d.rec) avviaRiconoscimento(d); }, ms);
   const r = new Riconoscimento();
   r.lang = "it-IT"; r.interimResults = true; r.continuous = true;
-  // Ascolto continuo: si chiude dopo SILENZIO_FINE_MS di silenzio (o con un altro clic); se l'ultimo risultato è già finale
-  // basta QUIETE_FINALE_MS.
-  let silenzio = setTimeout(() => r.stop(), 8000);
-  const rimanda = (ms = SILENZIO_FINE_MS) => { clearTimeout(silenzio); silenzio = setTimeout(() => r.stop(), ms); };
-  const base = $(inp).value ? `${$(inp).value.trim()} ` : "";
-  let finale = "";
   r.onresult = (e) => {
-    rimanda(e.results[e.results.length - 1].isFinal ? QUIETE_FINALE_MS : SILENZIO_FINE_MS);
+    if (d.ignora || d.rec !== r) return;
+    d.sentito = true; d.lampi = 0;
+    if (!d.chiusa) rimandaInattivo(d);
     let provv = "";
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const t = e.results[i][0].transcript;
-      if (e.results[i].isFinal) finale += t; else provv += t;
+      if (e.results[i].isFinal) d.finale += t; else provv += t;
     }
-    $(inp).value = base + finale + provv;
-    autoAltezza($(inp));
-    aggiornaInvia();
-    pastigliaTesto(finale + provv);
+    d.provv = provv;
+    scriviDettato(d);
   };
   r.onerror = (e) => {
-    if (e.error === "no-speech" || e.error === "aborted") return;
-    mostraBanner(e.error === "not-allowed" ? "Il browser non ha il permesso del microfono." : `Dettatura: ${e.error}`, 5000);
+    if (e.error === "no-speech" || e.error === "aborted") return; // il silenzio non è un errore: si riparte
+    d.errore = e.error;
+    mostraBanner(e.error === "not-allowed" ? "Il browser non ha il permesso del microfono."
+      : e.error === "audio-capture" ? "Nessun microfono disponibile." : `Dettatura: ${e.error}`, 5000);
   };
   r.onend = () => {
-    clearTimeout(silenzio);
-    ascolto = null;
-    $(mic).setAttribute("aria-pressed", "false");
-    aggiornaOrb();
-    // prima l'invio (azzera la voce in sospeso), poi si riprende ciò che resta
-    if (finale.trim() && possiedo()) pastigliaEsito(invio);
-    else if (possiedo()) pastigliaEsito(null, true);
-    sincronizzaVoce();
+    if (d.rec !== r) return;
+    d.rec = null;
+    d.lampi = Date.now() - d.avviato < LAMPO_MS ? d.lampi + 1 : 0;
+    if (d.lampi >= 3) { d.errore = "lampi"; mostraBanner("La dettatura si chiude da sola: controlla il microfono.", 5000); }
+    if (ascolto === d && !d.chiusa && !d.errore && possiedo()) { riprova(150); return; }
+    chiudiDettatura(d);
   };
-  ascolto = r;
-  $(mic).setAttribute("aria-pressed", "true");
-  r.start();
-  pastigliaInizia();
+  d.rec = r;
+  try { r.start(); } catch { // un altro riconoscimento non ha ancora mollato il microfono: si riprova fra poco
+    d.rec = null;
+    if (++d.lampi >= 3) { mostraBanner("Il microfono è occupato: riprova.", 5000); chiudiDettatura(d); return; }
+    riprova(300);
+  }
+}
+
+// Ferma la dettatura: «pausa», «inattivo» e «invio» aspettano le ultime parole (stop), «scritto» e «possesso» no (abort).
+function fermaDettatura(motivo) {
+  const d = ascolto;
+  if (!d) return;
+  d.chiusa = motivo;
+  clearTimeout(d.inattivo);
+  const r = d.rec;
+  if (!r) { chiudiDettatura(d); return; }
+  const subito = motivo === "scritto" || motivo === "possesso";
+  if (subito) d.ignora = true;
+  try { if (subito) r.abort(); else r.stop(); } catch { d.rec = null; chiudiDettatura(d); return; }
+  // rete di sicurezza: se il browser non chiude, si chiude qui con ciò che è già nel campo
+  setTimeout(() => {
+    if (ascolto !== d || d.rec !== r) return;
+    d.ignora = true; d.rec = null;
+    try { r.abort(); } catch { /* già fermo */ }
+    chiudiDettatura(d);
+  }, CHIUSURA_MS);
+}
+
+function chiudiDettatura(d) {
+  if (ascolto !== d) return;
+  clearTimeout(d.inattivo);
+  ascolto = null;
+  $(d.mic).setAttribute("aria-pressed", "false");
   aggiornaOrb();
   sincronizzaVoce();
+  const attese = d.attese.splice(0);
+  if (attese.length) { $("voce-pill").hidden = true; attese.forEach((f) => f()); return; } // l'invio lo racconta la chat
+  if (!possiedo() || d.chiusa === "scritto") { $("voce-pill").hidden = true; return; }
+  if (!d.sentito && !$(d.inp).value.trim()) pastiglia("err", "Non ho sentito niente.", false, 3000);
+  else if (d.chiusa === "inattivo") pastiglia("ok", "Dettatura in pausa dopo 3 minuti di silenzio: non ho inviato niente.", false, 6000);
+  else pastiglia("ok", "Dettatura in pausa: rileggi e premi Invia.", false, 3500);
+}
+
+// Prima di mandare il campo `inp` (chat.js): una dettatura in corso lì si chiude e le sue ultime parole entrano nel testo.
+function finisciDettatura(inp) {
+  const d = ascolto;
+  if (!d || d.inp !== inp) return Promise.resolve();
+  return new Promise((fatto) => { d.attese.push(fatto); if (!d.chiusa) fermaDettatura("invio"); });
 }
 
 // ---- la frase di chiamata anche qui: accende l'ascolto, il silenzio manda ---------------------------
@@ -183,7 +252,7 @@ function alCambioPossesso(possiede) {
     aggiornaOrb();
     return;
   }
-  if (ascolto) { try { ascolto.abort(); } catch { /* già fermo */ } }
+  fermaDettatura("possesso"); // il testo dettato resta nel campo
   clearTimeout(sv.timer);
   sv.comando = null;
   $("voce-pill").hidden = true;
@@ -195,12 +264,23 @@ function alCambioPossesso(possiede) {
 }
 
 function initDettatura() {
-  $("mic-j").onclick = () => avviaAscolto("in-j", "mic-j", inviaOrchestratore);
-  $("mic-s").onclick = () => avviaAscolto("in-s", "mic-s", inviaSessione);
-  $("orb").onclick = () => avviaAscolto("in-j", "mic-j", inviaOrchestratore);
+  S.primaDiInviare = finisciDettatura;
+  $("mic-j").onclick = () => avviaAscolto("in-j", "mic-j");
+  $("mic-s").onclick = () => avviaAscolto("in-s", "mic-s");
+  $("orb").onclick = () => avviaAscolto("in-j", "mic-j");
   document.addEventListener("keydown", (e) => {
-    if (e.ctrlKey && e.code === "Space") { e.preventDefault(); avviaAscolto("in-j", "mic-j", inviaOrchestratore); }
+    if (e.ctrlKey && e.code === "Space") { e.preventDefault(); avviaAscolto("in-j", "mic-j"); }
   });
+  // Esc mette in pausa la dettatura prima di ogni altro uso di Esc (chiudere il pannello, fermare la voce)
+  addEventListener("keydown", (e) => {
+    if (e.key !== "Escape" || !ascolto) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    fermaDettatura("pausa");
+  }, true);
+  // scrivere a mano nel campo che si sta dettando ferma la dettatura: le tue correzioni non vengono riscritte
+  for (const id of ["in-j", "in-s"]) {
+    $(id).addEventListener("input", (e) => { if (ascolto?.inp === id && e.isTrusted) fermaDettatura("scritto"); });
+  }
 }
 
 function initSveglia() {

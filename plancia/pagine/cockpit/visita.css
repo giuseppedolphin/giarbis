@@ -1,0 +1,14 @@
+/* la visita guidata (visita.js): il velo sta nell'ombra del buco, che lascia scoperto ciò di cui parla il passo */
+.visita{position:fixed;inset:0;z-index:60}
+.vs-senza{background:rgb(var(--abyss-rgb)/.72)}
+.vs-buco{position:fixed;border-radius:var(--r-md);box-shadow:0 0 0 100vmax rgb(var(--abyss-rgb)/.72),0 0 0 2px var(--sonar) inset;transition:left .22s ease,top .22s ease,width .22s ease,height .22s ease}
+.vs-buco[hidden]{display:none}
+.vs-carta{position:fixed;width:min(380px,calc(100vw - 24px));padding:16px 18px 14px;background:var(--panel);border:1px solid var(--line2);border-radius:var(--r-lg);box-shadow:0 18px 50px rgb(var(--abyss-rgb)/.55);transition:left .22s ease,top .22s ease}
+.vs-carta h2{margin:4px 0 6px;font:600 20px/1.2 var(--display)}
+.vs-carta p{margin:0;color:var(--text2);font-size:14.5px}
+.vs-n{color:var(--text2);font:500 12px/1 var(--mono)}
+.vs-piede{display:flex;align-items:center;gap:6px;margin-top:14px}
+.vs-punti{display:flex;gap:5px;margin-right:auto}
+.vs-punti i{width:6px;height:6px;border-radius:50%;background:var(--line2)}
+.vs-punti i.on{background:var(--sonar)}
+.vs-fermo .vs-buco,.vs-fermo .vs-carta{transition:none}

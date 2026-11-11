@@ -187,7 +187,7 @@ function disegnaSotto(cx, t) {
       per.set(q.k, { ...q, p: schermo(a.x, a.y), R: q.r * Math.max(0.8, z) });
     }
     const sfera = schermo(n.x, n.y), rs = raggioDi(n) * M.cam.z;
-    // i legami: dalla sfera alle radici un tentacolo sottile e curvo, dentro il workflow linee dritte
+    // i collegamenti: dalla sfera alle radici un tentacolo sottile e curvo, dentro il workflow linee dritte
     for (const q of per.values()) {
       const colore = COL_SA[q.stato] || COL.ferma;
       cx.save(); cx.lineCap = "round";

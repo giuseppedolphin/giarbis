@@ -1,14 +1,16 @@
 // Artifax, il registro di ciò che è stato mostrato (logica in server/artifax.mjs).
 //   GET/POST /api/artifax · POST /api/artifax/:id/foglio (lo riapre come foglio)
 import { registra, elenco, trova } from "../artifax.mjs";
+import { corpoDi } from "../identita.mjs";
 
-export function rotte({ fogli }) {
+export function rotte(nucleo) {
+  const { fogli } = nucleo;
   return [
     { metodo: "GET", percorso: "/api/artifax", gestore: () => ({ artifax: elenco() }) },
     {
       metodo: "POST", percorso: "/api/artifax",
       async gestore(c) {
-        const b = await c.corpo();
+        const b = await corpoDi(c, nucleo, "da"); // chi registra lo dice il token della sessione
         return { artifax: registra({ percorso: b.percorso, titolo: b.titolo, descrizione: b.descrizione, da: b.da, origine: b.origine === "pannello" ? "pannello" : "lavagna" }) };
       },
     },

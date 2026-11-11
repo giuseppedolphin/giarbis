@@ -126,7 +126,7 @@ export default async function (t) {
   for (const f of nucleo) {
     const dentroCockpit = rel(f).startsWith(path.join("pagine", "cockpit"));
     const righe = leggi(f).split("\n");
-    const trovate = righe.map((r, i) => (/jarvis/i.test(r) ? i + 1 : 0)).filter(Boolean);
+    const trovate = righe.map((r, i) => (/pilota/i.test(r) ? i + 1 : 0)).filter(Boolean);
     if (!trovate.length) continue;
     if (dentroCockpit && COCKPIT_ESENTE_DAL_NOME) t.nota(`da adattare all'ondata 3: ${rel(f)} nomina l'assistente nel codice (${trovate.length} righe)`);
     else t.ok(false, `${rel(f)}: nomina l'assistente nel codice, righe ${trovate.slice(0, 6).join(", ")}`);

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<!-- GENERATO da genera.mjs in questa cartella (colori da condivisi/palette.css). Non si scrive a mano. -->
+<style>
+.s0{stop-color:#09181e}.s1{stop-color:#1c4545}.s2{stop-color:#5ee6d0}.b{stroke:#5ee6d0}.t{stroke:#bff5ec}
+@media (prefers-color-scheme:light){.s0{stop-color:#f7f9fb}.s1{stop-color:#c1dddc}.s2{stop-color:#007a6d}.b{stroke:#007a6d}.t{stroke:#007a6d}}
+</style>
+<defs><radialGradient id="v" cx="32" cy="29" r="30" gradientUnits="userSpaceOnUse"><stop offset="0" class="s0"/><stop offset=".7" class="s1"/><stop offset="1" class="s2"/></radialGradient></defs>
+<circle cx="32" cy="32" r="30" fill="url(#v)"/>
+<circle class="b" cx="32" cy="32" r="28.5" fill="none" stroke-width="3"/>
+<g class="t" fill="none" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round">
+<ellipse cx="22" cy="27" rx="4.6" ry="4.2"/><ellipse cx="42" cy="27" rx="4.6" ry="4.2"/>
+<polyline points="21,40 22.83,40.67 24.67,41.3 26.5,41.84 28.33,42.25 30.17,42.51 32,42.6 33.83,42.51 35.67,42.25 37.5,41.84 39.33,41.3 41.17,40.67 43,40"/>
+</g>
+</svg>

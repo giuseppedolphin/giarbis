@@ -1,6 +1,6 @@
 // I fogli sopra la mappa (pagine, tabelle, immagini e i tipi dei moduli): stato sul server, accesi e spenti, trascinamento.
 // Ogni tipo di foglio ha un disegnatore registrato con registraTipoFoglio: il nucleo conosce html, immagine e tabella, il
-// foglio delle proposte lo registra proposte.js, gli altri arrivano dalle pagine dei moduli.
+// altri arrivano dalle pagine dei moduli.
 import { $, COL, assistente, mostraBanner, md } from "./comune.js";
 import { M, raggioDi, schermo, vistaMappa } from "./mappa.js";
 import { aggiornaPallini } from "./agenti-foglio.js";
@@ -102,6 +102,7 @@ function upsertFoglio(c, nuova) {
   const f = firmaFoglio(c);
   if (C.firma.get(c.id) !== f) { C.firma.set(c.id, f); rendiCorpoFoglio(c, el); }
   el.hidden = c.attiva === false; // spento: nascosto, ma posizione e misura restano
+  if (el.hidden) el.classList.remove("piena", "affiancato"); // spento anche da ctl (foglio disattiva): esce dal tutto schermo
   contieniFoglio(el);
   if ((nuova || riaccesa) && c.attiva !== false && !M.on) {
     if (innerWidth > 900) vistaMappa(true); else mostraBanner(`Foglio sulla mappa: ${c.titolo}`, 5000);
@@ -151,6 +152,9 @@ function accendiFoglio(id, acceso) {
   if (!c || !el) return;
   c.attiva = acceso;
   el.hidden = !acceso;
+  // spento col «–» a tutto schermo o affiancato: la classe resta sul foglio nascosto e coi comandi della mappa nascosti
+  // (stile.css, .mappa:has(.foglio.piena)) spariva tutta la barra in basso fino al ricarico
+  if (!acceso) el.classList.remove("piena", "affiancato");
   if (acceso) el.style.zIndex = ++C.z;
   rendiElencoFogli();
   api("POST", "/api/fogli", { id, attiva: acceso }).catch((e) => mostraBanner(e.message, 4000));
@@ -246,6 +250,7 @@ function initFogli() {
   };
   $("m-fogli").onclick = () => elencoFogli($("elenco-fogli").hidden);
   addEventListener("keydown", (e) => {
+    if (e.target.closest?.("#terminale")) return; // Esc nel terminale è della shell
     if (e.key === "Escape" && !$("elenco-fogli").hidden) { e.stopPropagation(); elencoFogli(false); }
   }, true);
   document.addEventListener("pointerdown", (e) => {
@@ -267,7 +272,7 @@ function initFogli() {
   });
   // Esc chiude il tutto schermo e basta: in cattura, così non chiude anche la chat aperta (che ascolta Esc su document)
   addEventListener("keydown", (e) => {
-    if (e.key !== "Escape") return;
+    if (e.key !== "Escape" || e.target.closest?.("#terminale")) return;
     const p = document.querySelector(".foglio.piena");
     if (!p) return;
     e.stopPropagation();

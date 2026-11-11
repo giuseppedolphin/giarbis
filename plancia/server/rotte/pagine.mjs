@@ -2,6 +2,8 @@
 // modulo (e le sue dashboard) le serve il modulo stesso con le sue rotte.
 //   GET /cockpit · /cockpit/<file>.js|css · /condivisi/<file>.js|css · /moduli/<nome>/<file>.js|css (solo moduli accesi)
 //   GET /nav.js · /widget.js (moduli ES per <script type="module">)
+//   GET /favicon.svg · /favicon.ico · /apple-touch-icon[-precomposed].png → la favicon (pagine/icona/, generata da genera.mjs);
+//       /favicon.ico risponde anche alle pagine che non dichiarano il link (la lavagna, i fogli)
 //   GET /api/chi → chi usa la plancia, il nome dell'assistente, la modalità (setup|normale) e i moduli accesi
 //   POST /api/setup/fatto → controlla plancia.config.json e manda cockpit_setup (primo avvio)
 // `rotteFinali` va registrata dopo quelle dei moduli: senza moduli, / porta al cockpit; un modulo che serve / vince.
@@ -12,7 +14,11 @@ import { PLANCIA } from "../config.mjs";
 import { dirStato, percorsoStato } from "../stato.mjs";
 
 const PAGINE = path.join(PLANCIA, "pagine");
-const TIPI = { js: "text/javascript; charset=utf-8", css: "text/css; charset=utf-8", html: "text/html; charset=utf-8" };
+const TIPI = {
+  js: "text/javascript; charset=utf-8", css: "text/css; charset=utf-8", html: "text/html; charset=utf-8",
+  svg: "image/svg+xml", png: "image/png", ico: "image/x-icon",
+};
+const ICONA = path.join(PAGINE, "icona");
 
 // Un file di pagina letto dal disco a ogni richiesta (niente cache: modificarlo non richiede il Riavvia).
 export function inviaPagina(c, file, intestazioni = {}) {
@@ -38,6 +44,10 @@ export function rotte(n) {
     },
     { metodo: "GET", percorso: "/nav.js", gestore: (c) => inviaPagina(c, path.join(PAGINE, "nav.js"), { "access-control-allow-origin": "*" }) },
     { metodo: "GET", percorso: "/widget.js", gestore: (c) => inviaPagina(c, path.join(PAGINE, "widget.js")) },
+    // la favicon: il browser la tiene in cache per conto suo, qui basta che la richieda di nuovo quando cambia
+    { metodo: "GET", percorso: "/favicon.svg", gestore: (c) => inviaPagina(c, path.join(ICONA, "icona.svg"), { "cache-control": "no-cache" }) },
+    { metodo: "GET", percorso: "/favicon.ico", gestore: (c) => inviaPagina(c, path.join(ICONA, "favicon.ico"), { "cache-control": "no-cache" }) },
+    { metodo: "GET", percorso: /^\/apple-touch-icon(?:-precomposed)?\.png$/, gestore: (c) => inviaPagina(c, path.join(ICONA, "apple-touch-icon.png"), { "cache-control": "no-cache" }) },
     {
       // Il setup ha scritto plancia.config.json: se c'è ed è JSON valido, la pagina mostra «Avvia» (= Riavvia).
       metodo: "POST", percorso: "/api/setup/fatto",

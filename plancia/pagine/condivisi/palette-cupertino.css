@@ -1,0 +1,55 @@
+/* Lo stile «Cupertino», accanto ai due temi: blu di sistema, grigi neutri, vetro sfocato, font di sistema, raggi e ombre morbide.
+   Non sostituisce niente: si accende con data-stile="cupertino" su <html> (lo mette la barra comune, e la riga in testa alla pagina
+   prima del primo disegno) e riscrive le stesse variabili --pl-* di palette.css, quindi vale per scuro e chiaro (data-tema) e per
+   il canvas, che le rilegge al cambio. Si carica dopo palette.css. Contrasto da testo 4,5:1 su abyss, deep e panel in entrambi i
+   modi (lo controlla test/controlli/colori.mjs); foglio, corallo e assistente restano distinguibili dagli accenti. */
+:root[data-stile=cupertino]{
+  --pl-abyss-rgb:18 18 20; --pl-deep-rgb:28 28 30; --pl-panel-rgb:36 36 38; --pl-line:#38383a; --pl-line2:#48484a;
+  --pl-text-rgb:245 245 247; --pl-text2-rgb:174 174 178; --pl-muted-rgb:152 152 157;
+  --pl-sonar-rgb:47 140 255; --pl-sonar-dim:#1d5cae; --pl-sand-rgb:255 159 10; --pl-coral-rgb:255 105 97; --pl-violet-rgb:169 155 255;
+  --pl-foglio-rgb:181 140 255; --pl-fatto-rgb:48 209 88; --pl-tu-rgb:245 245 247; --pl-punto-rgb:255 255 255;
+  --pl-su-sonar:#00132b; --pl-su-sand:#2a1700; --pl-coral-bordo:#6b2a27; --pl-coral-testo:#ff9f98; --pl-stop-hover:#fff;
+  --pl-err-bg:#3a1b1a; --pl-err-bordo:#6b2a27; --pl-err-testo:#ffd9d6;
+  --pl-code-rgb:14 14 16; --pl-code2:#0e0e10; --pl-tinta-rgb:255 255 255; --pl-ombra-rgb:0 0 0; --pl-ombra-k:.8;
+  --pl-freccia:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23aeaeb2' stroke-width='1.5'/%3E%3C/svg%3E");
+  --pl-velo:rgba(0,0,0,.55); --pl-alone1:#1f1f23; --pl-alone2:#121214; --pl-alone-mappa:rgba(48,48,52,.5);
+  --pl-campo:#121214; --pl-attenz:#ff9f0a; --pl-critico:#ff6961;
+  --pl-vetro:rgba(36,36,38,.72);
+  /* misure e font del cockpit (stile.css): raggi più larghi, font di sistema */
+  --r-lg:20px; --r-md:14px; --r-sm:10px;
+  --display:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",system-ui,sans-serif;
+  --body:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",system-ui,sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,monospace;
+}
+:root[data-stile=cupertino][data-tema=chiaro]{
+  --pl-abyss-rgb:242 242 247; --pl-deep-rgb:255 255 255; --pl-panel-rgb:247 247 250; --pl-line:#d9d9de; --pl-line2:#c7c7cc;
+  --pl-text-rgb:28 28 30; --pl-text2-rgb:84 84 88; --pl-muted-rgb:108 108 112;
+  --pl-sonar-rgb:0 102 214; --pl-sonar-dim:#9cc6f2; --pl-sand-rgb:156 87 0; --pl-coral-rgb:196 0 26; --pl-violet-rgb:91 71 207;
+  --pl-foglio-rgb:116 56 214; --pl-fatto-rgb:31 122 53; --pl-tu-rgb:28 28 30; --pl-punto-rgb:0 102 214;
+  --pl-su-sonar:#ffffff; --pl-su-sand:#ffffff; --pl-coral-bordo:#f1b3ba; --pl-coral-testo:#a30015; --pl-stop-hover:#8c0013;
+  --pl-err-bg:#fdecee; --pl-err-bordo:#f1b3ba; --pl-err-testo:#8c0013;
+  --pl-code-rgb:240 240 245; --pl-code2:#ececf1; --pl-tinta-rgb:28 28 30; --pl-ombra-rgb:28 28 30; --pl-ombra-k:.3;
+  --pl-freccia:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23545458' stroke-width='1.5'/%3E%3C/svg%3E");
+  --pl-velo:rgba(28,28,30,.32); --pl-alone1:#ffffff; --pl-alone2:#ececf1; --pl-alone-mappa:rgba(255,255,255,.7);
+  --pl-campo:#f2f2f7; --pl-attenz:#9c5700; --pl-critico:#c4001a;
+  --pl-vetro:rgba(255,255,255,.72);
+}
+/* il vetro: barre e pannelli traslucidi che sfocano ciò che sta sotto (solo dove il browser lo sa fare) */
+@supports (backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px)){
+  :root[data-stile=cupertino] .rdnav,
+  :root[data-stile=cupertino] .top,
+  :root[data-stile=cupertino] .pannello{background:var(--pl-vetro);-webkit-backdrop-filter:blur(22px) saturate(180%);backdrop-filter:blur(22px) saturate(180%)}
+  :root[data-stile=cupertino] .rdnav .pop,
+  :root[data-stile=cupertino] .pop-corpo,
+  :root[data-stile=cupertino] .form-mappa.aperto,
+  :root[data-stile=cupertino] .elenco-fogli,
+  :root[data-stile=cupertino] .battito-pannello{background:var(--pl-vetro);-webkit-backdrop-filter:blur(22px) saturate(180%);backdrop-filter:blur(22px) saturate(180%)}
+}
+:root[data-stile=cupertino] .rdnav{font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif}
+:root[data-stile=cupertino] .rdnav .pop,
+:root[data-stile=cupertino] .pop-corpo{border-radius:var(--r-md,14px)}
+:root[data-stile=cupertino] .rdnav a.voce[aria-current=page]{box-shadow:0 1px 2px rgb(var(--pl-ombra-rgb) / .25)}
+@media (prefers-reduced-transparency:reduce){
+  :root[data-stile=cupertino] .rdnav,:root[data-stile=cupertino] .top,:root[data-stile=cupertino] .pannello,
+  :root[data-stile=cupertino] .rdnav .pop,:root[data-stile=cupertino] .pop-corpo{background:var(--pl-deep);-webkit-backdrop-filter:none;backdrop-filter:none}
+}

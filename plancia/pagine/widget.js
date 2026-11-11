@@ -233,8 +233,11 @@ if (!(location.protocol === "file:" && !BASE) && !window.__widgetPlancia) {
         if (i === comando.base && comando.parola) t = riconosciChiamata(t, A).resto;
         parti.push(t);
       }
-      comando.testo = parti.join(" ").replace(/\s+/g, " ").trim();
-      if (comando.testo) { colpetto(); mostra(comando.testo); rimanda(1700); }
+      comando.testo = `${comando.prima || ""} ${parti.join(" ")}`.replace(/\s+/g, " ").trim();
+      if (!comando.testo) return;
+      colpetto(); mostra(comando.testo);
+      // con la frase di chiamata manda il silenzio; dopo un clic sul pallino le pause non mandano: si manda con un altro clic
+      if (comando.parola) rimanda(1700); else inattivo();
     };
     rec.onerror = (e) => {
       if (e.error !== "not-allowed") return;
@@ -242,10 +245,25 @@ if (!(location.protocol === "file:" && !BASE) && !window.__widgetPlancia) {
       $('[data-a="sveglia"]').setAttribute("aria-pressed", "false");
       mostra("Il browser non ha il permesso del microfono.");
     };
-    rec.onend = () => { attivo = false; if (vuoleAscoltare()) setTimeout(avviaAscolto, 250); };
+    rec.onend = () => {
+      attivo = false;
+      // il browser chiude dopo un silenzio lungo: un comando aperto col clic riparte tenendo ciò che hai già detto
+      if (comando && !comando.parola && comando.base !== null) { comando.prima = comando.testo || ""; comando.base = null; }
+      if (vuoleAscoltare()) setTimeout(avviaAscolto, 250);
+    };
     try { rec.start(); attivo = true; } catch { attivo = false; }
   }
   function rimanda(ms) { clearTimeout(timer); timer = setTimeout(chiudiComando, ms); }
+  // dopo un clic: 3 minuti senza parole e il microfono si chiude senza mandare, il testo resta da leggere
+  function inattivo() { clearTimeout(timer); timer = setTimeout(annullaComando, 180000); }
+  function annullaComando() {
+    const t = comando?.testo || "";
+    comando = null; clearTimeout(timer);
+    if (rec) { try { rec.abort(); } catch {} }
+    mostra(t ? `Non mandato dopo 3 minuti di silenzio: «${t}»` : "Non ho sentito niente.", false, "err");
+    riposo();
+    sincronizza();
+  }
   function chiudiComando() {
     const t = comando?.testo || "";
     comando = null; clearTimeout(timer);
@@ -257,9 +275,9 @@ if (!(location.protocol === "file:" && !BASE) && !window.__widgetPlancia) {
   function riprendiAscolto() { if (!attivo) avviaAscolto(); }
   function ascoltaSubito() {
     if (!SR) { mostra("Questo browser non ha la dettatura: usa Chrome."); return; }
-    comando = { base: null, parola: false };
-    sincronizza(); bip(); modo("ascolta"); mostra("Ti ascolto…", true);
-    avviaAscolto(); rimanda(7000);
+    comando = { base: null, parola: false, prima: "" };
+    sincronizza(); bip(); modo("ascolta"); mostra("Ti ascolto. Le pause non mandano: clicca il pallino quando hai finito.", true);
+    avviaAscolto(); inattivo();
   }
 
   // il motore della voce chiama subito una volta: si registra dopo che l'ascolto è definito

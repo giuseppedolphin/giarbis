@@ -6,25 +6,38 @@ import { fumettoVisibile } from "./fumetti.js";
 import { apriAgenteFoglio } from "./agenti-foglio.js";
 import { apri, caricaEventi } from "./chat.js";
 import {
-  $, COL, NOMI_TOOL, RIDOTTO, S, STATO, TEMA, eAssistente, fermo, mostraBanner, nomeModello, nomeSessione, nomeVisibile, persona, selettoreModello,
+  $, COL, NOMI_TOOL, RICARICA, RIDOTTO, S, STATO, TEMA, eAssistente, fermo, mostraBanner, nomeModello, nomeSessione, nomeVisibile, persona, selettoreModello,
 } from "./comune.js";
 import { SA, apriSchedaSotto, disegnaSotto, infoSotto, rendiSottoScheda, sottoA } from "./sottoagenti.js";
 import { T, apriSchedaTimer, dettaglioTimer, disegnaTimer, rendiTimerTutti, timerA } from "./timer.js";
 import { disegnaContesto, testoContesto } from "./contesto.js";
-import { disegnaVolto, tracciaVolto } from "./volto.js";
+import { disegnaVolto, statoVolto, tracciaVolto } from "./volto.js";
+import { disegnaSfera, fotoVolto, tracciaVolti } from "./volti.js";
+import { ZOOM_MAX, fermaZoom, initZoom } from "./zoom.js";
+import { apriDomandeDi, disegnaSegnoDomande, segnoA, testoSegno } from "./domande.js";
+import { chiediRimozione } from "./pulizia.js";
+import * as BM from "./bacheca-mappa.js";
+import { conPosti, ingombro, posizioni } from "./raggiera.js";
+import * as PO from "./posti.js";
 import { api } from "/condivisi/api.js";
 import { su } from "/condivisi/eventi.js";
 import { esc, unaRiga } from "/condivisi/formati.js";
+import { attrColore, rgbRuolo } from "/condivisi/colori.js";
 
 // ---- la mappa: gli agenti come sfere collegate --------------------------------------------
+// lo zoom più lontano, per rotella e «Centra»; da lontano spariscono prima le
+// righe dell'attività e la finestra di contesto (sotto LONTANO), poi i nomi degli esecutori (sotto LONTANISSIMO)
+const ZOOM_MIN = 0.12, LONTANO = 0.55, LONTANISSIMO = 0.38;
 const M = {
   ctx: new Map(), cv: $("mappa"), cx: $("mappa").getContext("2d"), nodi: new Map(), cam: { x: 0, y: 0, z: 1 }, attivita: new Map(),
   impulsi: [], sel: null, sopra: null, on: false, t0: performance.now(),
   selTimer: null, // il timer la cui scheda è aperta
   anelli: new Map(), // k del nodo → stato dell'anello di avanzamento
   d: 1, w: 0, h: 0, // pixel per punto della tela e la sua misura in punti, aggiornati da ridimensionaMappa
+  toccata: 0, ultimoT: 0, sporca: true, // l'ultimo gesto sulla mappa, l'ultimo fotogramma disegnato, un cambio da mostrare subito (passoMappa)
+  trascina: null, // il k della sfera che si sta spostando a mano (posti.js)
 };
-// La mappa è l'unica vista del cockpit (la vista a Lista è stata tolta il 07/10/2026): si accende all'avvio e resta accesa.
+// La mappa è l'unica vista del cockpit (la vista a Lista è stata tolta): si accende all'avvio e resta accesa.
 function vistaMappa() {
   if (M.on) return;
   M.on = true; $("app").classList.add("mappa-on");
@@ -32,57 +45,36 @@ function vistaMappa() {
 }
 function ridimensionaMappa() {
   const r = M.cv.getBoundingClientRect(), d = devicePixelRatio || 1;
-  M.cv.width = r.width * d;
-  M.cv.height = r.height * d;
-  M.d = d;
-  M.w = r.width;
-  M.h = r.height;
+  M.cv.width = r.width * d; M.cv.height = r.height * d; M.d = d; M.w = r.width; M.h = r.height;
 }
 
-// albero: tu → assistente → agenti (genitore), tu → agenti lanciati dalla pagina
+// albero: tu → assistente → agenti (genitore), tu → agenti lanciati dalla pagina; la disposizione è in raggiera.js, le sfere
+// spostate a mano (posti.js) restano dove le ha messe la persona, quella che si sta trascinando (M.trascina) non si tocca
 function layout() {
-  const sess = [...S.sessioni.values()];
-  const figli = new Map(); const radice = "tu";
-  const nodoDi = (s) => s.ruolo === "orchestratore" ? "j:" + s.id : "a:" + s.id;
-  const perNome = new Map(sess.map((s) => [s.nome, s]));
-  const voci = [{ k: radice, nome: persona.nome || "Tu", ruolo: "tu", padre: null }];
-  for (const s of sess) {
-    const p = s.ruolo === "orchestratore" ? radice : s.genitore && perNome.has(s.genitore) ? nodoDi(perNome.get(s.genitore)) : radice;
-    voci.push({ k: nodoDi(s), s, nome: s.nome, ruolo: s.ruolo, padre: p });
-  }
-  for (const v of voci) if (v.padre) { if (!figli.has(v.padre)) figli.set(v.padre, []); figli.get(v.padre).push(v); }
-  // l'assistente al centro, tu sopra; i figli a raggiera, i nipoti a ventaglio intorno al padre
-  const pos = new Map();
-  const j = voci.find((v) => v.ruolo === "orchestratore");
-  pos.set(radice, { x: -320, y: 0 });
-  if (j) pos.set(j.k, { x: 0, y: 0 });
-  const piazza = (padre, centro, a0, a1, raggio, livello) => {
-    const f = (figli.get(padre) || []).filter((v) => v.ruolo !== "orchestratore");
-    f.forEach((v, i) => {
-      const a = f.length === 1 ? (a0 + a1) / 2 : a0 + (a1 - a0) * (i / (f.length - 1));
-      const p = { x: centro.x + Math.cos(a) * raggio, y: centro.y + Math.sin(a) * raggio };
-      pos.set(v.k, p);
-      const ampiezza = Math.min(Math.PI / 2.2, (a1 - a0) / Math.max(1, f.length) * 1.4);
-      piazza(v.k, p, a - ampiezza / 2, a + ampiezza / 2, Math.max(120, raggio * 0.62), livello + 1);
-    });
-  };
-  // l'assistente allarga i tentacoli verso destra, tu verso sinistra: l'albero si legge da sinistra a destra
-  if (j) piazza(j.k, pos.get(j.k), -Math.PI * 0.42, Math.PI * 0.42, 300, 1);
-  piazza(radice, pos.get(radice), Math.PI * 0.62, Math.PI * 1.38, 230, 1);
-  // aggiorna i nodi animati
-  const vivi = new Set();
+  M.sporca = true;
+  const auto = posizioni(S.sessioni.values(), persona.nome), voci = auto.voci, { pos } = conPosti(voci, auto.pos, PO.POSTI);
+  const vivi = new Set(); // aggiorna i nodi animati
   for (const v of voci) {
     vivi.add(v.k);
     const p = pos.get(v.k) || { x: 0, y: 0 };
     const n = M.nodi.get(v.k) || { x: p.x, y: p.y + 40, nato: performance.now() };
-    Object.assign(n, { k: v.k, s: v.s, nome: v.nome, ruolo: v.ruolo, padre: v.padre, tx: p.x, ty: p.y });
+    Object.assign(n, { k: v.k, s: v.s, nome: v.nome, ruolo: v.ruolo, padre: v.padre }, M.trascina === v.k ? {} : { tx: p.x, ty: p.y });
     M.nodi.set(v.k, n);
   }
   for (const k of [...M.nodi.keys()]) if (!vivi.has(k)) M.nodi.delete(k);
 }
-// gli agenti di foglio hanno il colore del loro pallino (salvo l'errore, che resta corallo); gli altri il colore dello stato
-const coloreNodo = (n) => n.ruolo === "tu" ? COL.tu : n.ruolo === "foglio" && n.s?.stato !== "errore" ? COL.foglio : COL[n.s?.stato] || COL.ferma;
-const raggioDi = (n) => n.ruolo === "orchestratore" ? 46 : n.ruolo === "tu" ? 22 : 30;
+// agenti di foglio col colore del loro pallino (l'errore resta corallo), gli altri dello stato; esecutori della squadra più piccoli dei capi
+const coloreStato = (n) => n.ruolo === "tu" ? COL.tu : n.ruolo === "foglio" && n.s?.stato !== "errore" ? COL.foglio : COL[n.s?.stato] || COL.ferma;
+// la squadra col colore del suo ruolo (condivisi/colori.js) su sfera, tentacolo ed etichetta; lo stato resta su alone e anello.
+// L'etichetta prende il colore del tema (contrasto da testo); la sfera quello acceso del tema scuro in entrambi i temi, che sul
+// chiaro il colore da testo è troppo cupo; in pausa sbiadisce un po' verso il grigio, in errore la sfera resta corallo
+const coloreRuoloNodo = (n) => (n.ruolo === "squadra" && n.s?.stato !== "errore" ? rgbRuolo(n.s?.nome, TEMA.chiaro) : null);
+const coloreNodo = (n) => {
+  const c = n.ruolo === "squadra" && n.s?.stato !== "errore" ? rgbRuolo(n.s?.nome, false) : null;
+  if (!c) return coloreStato(n);
+  return n.s?.stato === "ferma" ? c.map((x, i) => Math.round(x * 0.75 + COL.ferma[i] * 0.25)) : c;
+};
+const raggioDi = (n) => n.ruolo === "orchestratore" ? 46 : n.ruolo === "tu" ? 22 : n.s?.squadra?.tipo === "esecutore" ? 25 : 30;
 const schermo = (x, y) => ({ x: (x - M.cam.x) * M.cam.z + M.w / 2, y: (y - M.cam.y) * M.cam.z + M.h / 2 });
 const mondo = (x, y) => ({ x: (x - M.w / 2) / M.cam.z + M.cam.x, y: (y - M.h / 2) / M.cam.z + M.cam.y });
 function attivitaDi(n) {
@@ -166,18 +158,24 @@ function disegnaAscolto(cx, p, r, t) {
   cx.stroke();
   cx.restore();
 }
+// Ogni quanti ms si ridisegna la tela: mentre qualcosa si muove (gesto, sfere in viaggio,
+// impulsi, volto che parla, ascolta o cambia espressione) al più 60 fotogrammi al secondo, con un agente al lavoro 30, a riposo 10.
+function passoMappa(t) {
+  if (M.sporca) return 0;
+  const nodi = [...M.nodi.values()], assestati = nodi.every((n) => Math.abs(n.tx - n.x) < 0.3 && Math.abs(n.ty - n.y) < 0.3);
+  if (t - M.toccata < 1500 || M.impulsi.length || !assestati || !["riposo", "pensa", "lavora"].includes(statoVolto(performance.now()))) return 15;
+  return nodi.some((n) => n.s && (n.s.stato === "lavora" || n.s.stato === "avvio")) ? 33 : 100;
+}
+const toccaMappa = () => { M.toccata = performance.now(); }; let pan = null; // il gesto in corso sulla tela
 function disegnaMappa(t) {
   if (!M.on) return;
+  if (t - M.ultimoT < passoMappa(t)) { requestAnimationFrame(disegnaMappa); return; }
+  M.ultimoT = t; M.sporca = false;
   const { cx, d } = M; cx.setTransform(d, 0, 0, d, 0, 0); cx.clearRect(0, 0, M.w, M.h);
   // griglia leggera, come un fondale
   const passo = 80 * M.cam.z, o = schermo(0, 0);
   cx.fillStyle = `rgba(${TEMA.sonar},${TEMA.chiaro ? 0.16 : 0.07})`;
-  for (let x = ((o.x % passo) + passo) % passo; x < M.w; x += passo) for (let y = ((o.y % passo) + passo) % passo; y < M.h; y += passo) cx.fillRect(
-    x - 1,
-    y - 1,
-    2,
-    2
-  );
+  for (let x = ((o.x % passo) + passo) % passo; x < M.w; x += passo) for (let y = ((o.y % passo) + passo) % passo; y < M.h; y += passo) cx.fillRect(x - 1, y - 1, 2, 2);
   for (const n of M.nodi.values()) { n.x += (n.tx - n.x) * 0.12; n.y += (n.ty - n.y) * 0.12; }
   // tentacoli
   for (const n of M.nodi.values()) {
@@ -191,14 +189,14 @@ function disegnaMappa(t) {
       cx.beginPath(); cx.moveTo(a.x, a.y); cx.quadraticCurveTo(f(0).c.x, f(0).c.y, b.x, b.y); cx.stroke(); }
     cx.globalAlpha = 1;
   }
-  // impulsi: messaggi che viaggiano lungo i tentacoli
-  M.impulsi = M.impulsi.filter((i) => t - i.t0 < 1400);
+  // impulsi: messaggi lungo i tentacoli e, in linea retta, fra due sfere o verso la bacheca (disegnata sotto, bacheca-mappa.js)
+  M.impulsi = M.impulsi.filter((i) => t - i.t0 < 1400); BM.disegna(cx);
   for (const i of M.impulsi) {
-    const da = M.nodi.get(i.da), a2 = M.nodi.get(i.a); if (!da || !a2) continue;
+    const da = M.nodi.get(i.da), bb = i.a === "bacheca" ? BM.box() : null, a2 = bb ? { x: bb.x + bb.w / 2, y: bb.y + bb.h / 2 } : M.nodi.get(i.a); if (!da || !a2) continue;
     const u = Math.min(1, (t - i.t0) / 1100);
     const A = schermo(da.x, da.y), B = schermo(a2.x, a2.y);
-    const padreFiglio = a2.padre === i.da, pa = padreFiglio ? A : B, pb = padreFiglio ? B : A;
-    const f = puntoCurva(pa, pb, (padreFiglio ? a2 : da).k.length, t); const q = f(padreFiglio ? u : 1 - u);
+    const padreFiglio = !i.diretto && a2.padre === i.da, pa = padreFiglio ? A : B, pb = padreFiglio ? B : A;
+    const q = i.diretto ? { x: A.x + (B.x - A.x) * u, y: A.y + (B.y - A.y) * u } : puntoCurva(pa, pb, (padreFiglio ? a2 : da).k.length, t)(padreFiglio ? u : 1 - u);
     cx.beginPath();
     cx.arc(q.x, q.y, 5, 0, Math.PI * 2);
     cx.fillStyle = `rgb(${TEMA.punto})`;
@@ -211,22 +209,22 @@ function disegnaMappa(t) {
   cx.textAlign = "center"; M.ctx.clear();
   for (const n of M.nodi.values()) {
     const p = schermo(n.x, n.y), r = raggioDi(n) * M.cam.z;
-    const colore = coloreNodo(n);
+    const colore = coloreNodo(n), stato = coloreStato(n);
     const vivo = n.s && (n.s.stato === "lavora" || n.s.stato === "avvio");
     if (vivo || n.s?.stato === "attende") {
       const periodo = vivo ? 1300 : 2600, k = ((t + n.k.length * 300) % periodo) / periodo;
       cx.beginPath();
       cx.arc(p.x, p.y, r * (1 + k * 0.9), 0, Math.PI * 2);
-      cx.strokeStyle = `rgba(${colore},${(1 - k) * 0.6})`;
+      cx.strokeStyle = `rgba(${stato},${(1 - k) * 0.6})`;
       cx.lineWidth = 2;
       cx.stroke();
     }
     if (n.ruolo === "orchestratore" && (ascolto || sv.comando)) disegnaAscolto(cx, p, r, t);
-    if (n.ruolo === "agente" && n.s) disegnaAnello(cx, p, r + 7 * M.cam.z, colore, n, t, vivo);
+    if ((n.ruolo === "agente" || n.ruolo === "squadra") && n.s) disegnaAnello(cx, p, r + 7 * M.cam.z, stato, n, t, vivo);
     else if (vivo) {
       cx.beginPath();
       cx.arc(p.x, p.y, r + 7 * M.cam.z, t / 300, t / 300 + 1.4);
-      cx.strokeStyle = `rgba(${colore},.9)`;
+      cx.strokeStyle = `rgba(${stato},.9)`;
       cx.lineWidth = 2.5;
       cx.stroke();
     }
@@ -234,12 +232,7 @@ function disegnaMappa(t) {
       const tu = M.nodi.get("tu"), dx = tu ? tu.x - n.x : -1, dy = tu ? tu.y - n.y : 1, dl = Math.hypot(dx, dy) || 1;
       disegnaVolto(cx, p, r, t, (M.sel === n.k || M.sopra === n.k ? 34 : 18) * Math.min(1.3, M.cam.z), { x: dx / dl, y: dy / dl });
     } else {
-      const g = cx.createRadialGradient(p.x - r * 0.3, p.y - r * 0.35, r * 0.1, p.x, p.y, r);
-      g.addColorStop(0, `rgba(${colore.map((x) => Math.min(255, x + 90))},1)`);
-      g.addColorStop(0.55, `rgba(${colore},.95)`);
-      g.addColorStop(1, `rgba(${colore.map((x) => x * 0.3 | 0)},.95)`);
-      cx.shadowColor = `rgba(${colore},.7)`; cx.shadowBlur = (M.sel === n.k || M.sopra === n.k ? 34 : 18) * Math.min(1.3, M.cam.z);
-      cx.beginPath(); cx.arc(p.x, p.y, r, 0, Math.PI * 2); cx.fillStyle = g; cx.fill(); cx.shadowBlur = 0;
+      disegnaSfera(cx, n, p, r, colore, (M.sel === n.k || M.sopra === n.k ? 34 : 18) * Math.min(1.3, M.cam.z), t, M.nodi.get("tu")); // volti.js
     }
     if (M.sel === n.k) {
       cx.beginPath();
@@ -248,8 +241,12 @@ function disegnaMappa(t) {
       cx.lineWidth = 1.5;
       cx.stroke();
     }
-    // il fumetto di fine turno (fumetti.js), quando c'è, sostituisce il pallino dei non letti
-    if (n.s?.nonLetti && n.s.stato === "attende" && !fumettoVisibile(n.s)) {
+    // la misura dei testi: segue lo zoom fra 0,75 e 1,25; da lontano scende ancora un po', fino a 0,6
+    const z = M.cam.z, zt = Math.max(0.6, Math.min(1.25, z < LONTANO ? z + 0.2 : Math.max(0.75, z)));
+    // una domanda aperta nella casella «Da decidere» (domande.js): il segno «?» al posto del pallino dei non letti dell'assistente
+    const chiede = disegnaSegnoDomande(cx, n.s, p, r, zt, { coral: TEMA.coral, fondo: TEMA.fondo });
+    // il pallino dei non letti solo sull'assistente: gli agenti non si guardano uno per uno
+    if (!chiede && n.s?.ruolo === "orchestratore" && n.s.nonLetti && n.s.stato === "attende") {
       cx.beginPath();
       cx.arc(p.x + r * 0.75, p.y - r * 0.75, 8, 0, Math.PI * 2);
       cx.fillStyle = `rgb(${COL.attende})`;
@@ -258,8 +255,7 @@ function disegnaMappa(t) {
       cx.font = "600 10px Instrument Sans, sans-serif";
       cx.fillText(String(n.s.nonLetti), p.x + r * 0.75, p.y - r * 0.75 + 3.5);
     }
-    const zt = Math.max(0.75, Math.min(1.25, M.cam.z));
-    if (n.s) {
+    if (n.s && z >= LONTANO) {
       const q = disegnaContesto(
         cx,
         n.s,
@@ -270,14 +266,18 @@ function disegnaMappa(t) {
       );
       if (q) M.ctx.set(n.k, { ...q, s: n.s });
       else M.ctx.delete(n.k);
-    } // la finestra di contesto, staccata dall'anello
-    cx.fillStyle = `rgb(${TEMA.testo})`;
+    } else M.ctx.delete(n.k); // la finestra di contesto, staccata dall'anello
+    cx.fillStyle = `rgb(${coloreRuoloNodo(n) || TEMA.testo})`; // il nome di un ruolo nel suo colore, leggibile su entrambi i temi
     cx.textAlign = "center";
     cx.textBaseline = "alphabetic";
+    if (z < LONTANISSIMO && n.s?.squadra?.tipo === "esecutore") continue;
     cx.font = `600 ${Math.round((n.ruolo === "orchestratore" ? 16 : 14) * zt)}px Bricolage Grotesque, sans-serif`;
     cx.fillText(n.s ? nomeSessione(n.s) : n.nome, p.x, p.y + r + 20 * zt);
+    if (z < LONTANO) continue;
     cx.font = `${Math.round(12 * zt)}px Instrument Sans, sans-serif`; cx.fillStyle = `rgb(${TEMA.testo2})`;
-    righe(cx, attivitaDi(n), 210 * zt).forEach((rg, i) => cx.fillText(rg, p.x, p.y + r + (37 + i * 15) * zt));
+    // le righe dell'attività stanno nel riquadro della sfera (raggiera.js, ingombro: più stretto per un esecutore) e da lontano si stringono
+    const w = ingombro(n).w;
+    righe(cx, attivitaDi(n), Math.min((w - 25) * zt, (w - 20) * z)).forEach((rg, i) => cx.fillText(rg, p.x, p.y + r + (37 + i * 15) * zt));
   }
   disegnaSotto(cx, t);
   disegnaTimer(cx, t);
@@ -293,15 +293,16 @@ function nodoA(x, y) {
   }
   return null;
 }
-let pan = null;
-// inquadra tutti i nodi, con il margine per le etichette
+// inquadra tutti i nodi: i riquadri sfera+etichetta in punti della mappa, più un bordo in pixel (in basso la barra dei comandi)
 function inquadra() {
+  toccaMappa();
   const n = [...M.nodi.values()]; if (!n.length || !M.w) return;
-  const xs = n.map((v) => v.tx), ys = n.map((v) => v.ty);
-  const x0 = Math.min(...xs) - 140, x1 = Math.max(...xs) + 140, y0 = Math.min(...ys) - 90, y1 = Math.max(...ys) + 110;
-  M.cam = { x: (x0 + x1) / 2, y: (y0 + y1) / 2, z: Math.max(0.45, Math.min(1.25, Math.min(M.w / (x1 - x0), M.h / (y1 - y0)))) };
+  const x0 = Math.min(...n.map((v) => v.tx - ingombro(v).w / 2)), x1 = Math.max(...n.map((v) => v.tx + ingombro(v).w / 2));
+  const y0 = Math.min(...n.map((v) => v.ty)) - 70, y1 = Math.max(...n.map((v) => v.ty)) + 105 + 54 + 20; // più la bacheca sotto
+  const lato = 24, sopra = 24, sotto = 90;
+  const z = Math.max(ZOOM_MIN, Math.min(1.25, (M.w - 2 * lato) / (x1 - x0), (M.h - sopra - sotto) / (y1 - y0)));
+  M.cam = { x: (x0 + x1) / 2, y: (y0 + y1) / 2 + (sotto - sopra) / 2 / z, z };
 }
-
 // la scheda di un nodo: gli ultimi messaggi, chi li ha mandati, e il passaggio alla chat
 // «Tu» per la persona di /api/chi e per il mittente predefinito «tu»; l'assistente col suo nome (anche negli eventi vecchi)
 function etichettaMittente(m) {
@@ -324,19 +325,24 @@ async function apriScheda(n) {
   }).join("");
   const colore = (COL[s.stato] || COL.ferma).join(",");
   const lavora = s.stato === "lavora" || s.stato === "avvio";
-  el.innerHTML = `<div class="sn-testa"><span class="dot ${s.stato}" style="width:9px;height:9px;border-radius:50%;background:rgb(${colore})"></span>`
-    + `<b>${esc(nome)}</b>${selettoreModello(s)}<span class="meta">${esc(STATO[s.stato] || s.stato)}</span>`
+  const foto = s.ruolo === "squadra" ? fotoVolto(s.nome) : "";
+  el.innerHTML = `<div class="sn-testa">${foto ? `<img class="volto-foto" alt="" src="${foto}" style="box-shadow:0 0 0 2px rgb(${colore})">` : `<span class="dot ${s.stato}" style="width:9px;height:9px;border-radius:50%;background:rgb(${colore})"></span>`}`
+    + `<b${attrColore(s.ruolo === "squadra" ? s.nome : "", "nome-ag")}>${esc(nome)}</b>${selettoreModello(s)}<span class="meta">${esc(STATO[s.stato] || s.stato)}</span>`
     + '<button class="x" id="sn-x" title="Chiudi">✕</button></div>'
     + `<div class="sn-corpo"><div id="sn-timer" hidden></div>${msg || '<div class="meta">Nessun messaggio ancora.</div>'}<div id="sn-sotto" hidden></div></div>`
     + `<div class="sn-piede"><button class="btn primario" id="sn-chat">${s.ruolo === "foglio" ? "Apri" : "Apri la chat"}</button>`
-    + `${lavora ? '<button class="btn leggero" id="sn-ferma">Ferma</button>' : ""}</div>`;
+    + `${lavora || s.processo ? `<button class="btn leggero" id="sn-ferma" title="${lavora ? "Interrompe il turno in corso" : RICARICA}">${lavora ? "Ferma" : "Ricarica"}</button>` : ""}`
+    + `${!lavora && s.ruolo !== "orchestratore" && s.ruolo !== "squadra" ? '<button class="btn pericolo" id="sn-rimuovi">Rimuovi</button>' : ""}`
+    + `${PO.aMano(n) ? '<button class="btn leggero" id="sn-posto" title="La rimette dove la mette la disposizione automatica">Al suo posto</button>' : ""}</div>`;
   el.hidden = false;
   rendiTimerTutti(); rendiSottoScheda();
   const corpo = el.querySelector(".sn-corpo"); corpo.scrollTop = corpo.scrollHeight;
   $("sn-x").onclick = chiudiScheda;
   // l'agente di un foglio si apre col suo foglio accanto (se il foglio non c'è più, solo la chat)
   $("sn-chat").onclick = () => { chiudiScheda(); if (s.ruolo === "foglio" && C.el.has(s.foglio)) apriAgenteFoglio(s.foglio); else apri(s.id); };
+  if ($("sn-posto")) $("sn-posto").onclick = () => { PO.riordina(n); $("sn-posto").remove(); };
   if ($("sn-ferma")) $("sn-ferma").onclick = () => api("POST", `/api/sessioni/${s.id}/ferma`).catch((e) => mostraBanner(e.message, 5000));
+  if ($("sn-rimuovi")) $("sn-rimuovi").onclick = () => { const dove = { left: el.style.left, top: el.style.top, right: "", bottom: "" }; chiudiScheda(); chiediRimozione(s, dove); }; // anche su touch (pulizia.js)
   posizionaScheda();
 }
 function chiudiScheda() { M.sel = null; M.selTimer = null; SA.sel = null; $("scheda-nodo").hidden = true; }
@@ -354,8 +360,9 @@ function posizionaScheda() {
 }
 // cosa sta facendo adesso ogni agente, e i messaggi che passano fra i nodi
 function tracciaMappa(ev) {
+  M.sporca = true; // ogni evento può cambiare un colore, un'etichetta o un anello: il prossimo fotogramma si disegna
   const s = S.sessioni.get(ev.id);
-  tracciaVolto(ev); // il volto dell'assistente (volto.js)
+  tracciaVolto(ev); tracciaVolti(ev); // i volti dell'assistente e dei ruoli (volto.js, volti.js)
   if (ev.type === "delta_tool") M.attivita.set(ev.id, { testo: `⚙ ${NOMI_TOOL[ev.nome] || ev.nome}`, t: Date.now() });
   else if (ev.type === "delta_pensa") M.attivita.set(ev.id, { testo: "ragiona…", t: Date.now() });
   else if (ev.type === "delta") {
@@ -382,12 +389,11 @@ function tracciaMappa(ev) {
     }
   }, 60);
 }
-
 // A turno chiuso bene l'anello di avanzamento di un agente si completa.
 function completaAnello(ev) {
   if (ev.errore) return;
   const n = M.on && M.nodi.get(`a:${ev.id}`);
-  if (!n || n.ruolo !== "agente") return;
+  if (!n || (n.ruolo !== "agente" && n.ruolo !== "squadra")) return;
   const a = M.anelli.get(n.k) || { v: null, vis: 0, fineT: 0, completa: 0 };
   M.anelli.set(n.k, a);
   a.completa = 1;
@@ -402,22 +408,18 @@ function posizionaComandoVoce() {
 
 function initMappa() {
   su("*", tracciaMappa);
-  su("fine", completaAnello);
+  su("fine", completaAnello); BM.initBachecaMappa({ M, schermo, righe, LONTANO });
   // la tela segue le dimensioni reali (finestra, pannello della chat che si apre o si chiude)
-  if ("ResizeObserver" in window) new ResizeObserver(() => M.on && ridimensionaMappa()).observe(M.cv);
+  if ("ResizeObserver" in window) new ResizeObserver(() => { toccaMappa(); if (M.on) ridimensionaMappa(); }).observe(M.cv);
   else addEventListener("resize", () => M.on && ridimensionaMappa());
+  // sulla mappa intera, non solo sulla tela: anche un foglio trascinato sposta il legame disegnato verso la sua sfera
+  for (const tipo of ["pointerdown", "pointermove", "pointerup", "wheel"]) (M.cv.closest(".mappa") || M.cv).addEventListener(tipo, toccaMappa, { passive: true });
   M.cv.addEventListener(
     "pointerdown",
-    (e) => { const r = M.cv.getBoundingClientRect(); pan = {
-      x: e.clientX,
-      y: e.clientY,
-      cx: M.cam.x,
-      cy: M.cam.y,
-      mosso: false,
-      nodo: nodoA(e.clientX - r.left, e.clientY - r.top),
-      timer: timerA(e.clientX - r.left, e.clientY - r.top),
-      sotto: sottoA(e.clientX - r.left, e.clientY - r.top)
-    }; M.cv.setPointerCapture(e.pointerId); }
+    (e) => { const r = M.cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+      pan = { x: e.clientX, y: e.clientY, cx: M.cam.x, cy: M.cam.y, mosso: false, nodo: nodoA(x, y), timer: timerA(x, y), segno: segnoA(x, y), sotto: sottoA(x, y), bacheca: BM.sopra(x, y) };
+      if (pan.nodo && !pan.sotto && !pan.bacheca) PO.prendi(pan, x, y); // si trascina la sfera, non la mappa (posti.js)
+      M.cv.setPointerCapture(e.pointerId); }
   );
   M.cv.addEventListener("pointermove", (e) => {
     const r = M.cv.getBoundingClientRect();
@@ -426,10 +428,9 @@ function initMappa() {
       if (Math.hypot(dx, dy) > 4) {
         pan.mosso = true;
         M.cv.classList.add("trascina");
-      } if (pan.mosso) {
-        M.cam.x = pan.cx - dx / M.cam.z;
-        M.cam.y = pan.cy - dy / M.cam.z;
-      } return;
+      } if (pan.mosso && pan.presa) PO.muovi(pan, e.clientX - r.left, e.clientY - r.top);
+      else if (pan.mosso) { M.cam.x = pan.cx - dx / M.cam.z; M.cam.y = pan.cy - dy / M.cam.z; }
+      return;
     }
     const sa = sottoA(e.clientX - r.left, e.clientY - r.top);
     if (sa) {
@@ -441,12 +442,19 @@ function initMappa() {
     } // un sotto-agente: etichetta, fase, stato, durata
     const cz = [...M.ctx.values()].find((v) => Math.hypot(v.x - (e.clientX - r.left), v.y - (e.clientY - r.top)) <= v.r + 3);
     if (cz) {
-      M.sopra = null;
-      M.cv.classList.remove("su-nodo");
+      M.sopra = null; M.cv.classList.remove("su-nodo");
       const info = testoContesto(cz.s);
       if (M.cv.title !== info) M.cv.title = info;
       return;
     } // il cerchiolino del contesto: token, modello, compattazione
+    const sg = segnoA(e.clientX - r.left, e.clientY - r.top);
+    if (sg) {
+      M.sopra = null;
+      M.cv.classList.add("su-nodo");
+      const info = testoSegno(sg.id);
+      if (M.cv.title !== info) M.cv.title = info;
+      return;
+    } // il segno «?»: cosa chiede
     const tm = timerA(e.clientX - r.left, e.clientY - r.top);
     if (tm) {
       M.sopra = null;
@@ -455,13 +463,18 @@ function initMappa() {
       if (M.cv.title !== info) M.cv.title = info;
       return;
     } // il timer: cosa controlla e fra quanto scatta
+    const bc = BM.sopra(e.clientX - r.left, e.clientY - r.top);
+    if (bc || ["bacheca", "ing", "cuore", "scopa"].includes(M.sopra)) M.sporca = true;
+    if (bc) { M.sopra = bc.k; M.cv.classList.add("su-nodo"); M.cv.title = bc.titolo; return; }
     const n = nodoA(e.clientX - r.left, e.clientY - r.top); M.sopra = n?.k || null; M.cv.classList.toggle("su-nodo", !!n);
     const passo = n?.s && (n.s.stato === "lavora" || n.s.stato === "avvio") ? n.s.progresso?.passo || "" : ""; // il passo corrente, a parole e senza numeri
     const info = n?.s ? [nomeModello(n.s.modello), passo].filter(Boolean).join(" · ") : ""; // al passaggio del mouse: il modello e il passo
     if (M.cv.title !== info) M.cv.title = info;
   });
-  M.cv.addEventListener("pointerup", () => { M.cv.classList.remove("trascina"); if (pan && !pan.mosso) {
-    if (pan.sotto) {
+  M.cv.addEventListener("pointerup", () => { M.cv.classList.remove("trascina"); if (pan?.mosso && pan.presa) PO.lascia(pan); if (pan && !pan.mosso) {
+    if (pan.bacheca) pan.bacheca.clic();
+    else if (pan.segno) apriDomandeDi(pan.segno.id);
+    else if (pan.sotto) {
       if (pan.sotto.q.tipo === "gruppo") {
         SA.espansi.has(pan.sotto.q.k) ? SA.espansi.delete(pan.sotto.q.k) : SA.espansi.add(pan.sotto.q.k);
       } else apriSchedaSotto(pan.sotto);
@@ -469,16 +482,15 @@ function initMappa() {
     else if (pan.nodo && pan.nodo.ruolo !== "tu") apriScheda(pan.nodo);
     else chiudiScheda();
   } pan = null; });
-  M.cv.addEventListener(
-    "dblclick",
-    (e) => { const r = M.cv.getBoundingClientRect(); const n = nodoA(e.clientX - r.left, e.clientY - r.top); if (n && n.s) apri(n.s.id); }
-  );
+  M.cv.addEventListener("pointercancel", () => { M.cv.classList.remove("trascina"); if (pan?.mosso && pan.presa) PO.lascia(pan); pan = null; });
+  M.cv.addEventListener("dblclick", (e) => { const r = M.cv.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top; const n = nodoA(x, y); if (n && n.s) apri(n.s.id); });
+  initZoom({ M, zMin: ZOOM_MIN, mondo, tocca: toccaMappa, vuoto: (x, y) => !(nodoA(x, y) || sottoA(x, y) || timerA(x, y) || segnoA(x, y) || BM.sopra(x, y) || [...M.ctx.values()].some((v) => Math.hypot(v.x - x, v.y - y) <= v.r + 3)) });
   M.cv.addEventListener("wheel", (e) => {
-    e.preventDefault(); const r = M.cv.getBoundingClientRect(); const px = e.clientX - r.left, py = e.clientY - r.top;
-    const prima = mondo(px, py); M.cam.z = Math.min(2.4, Math.max(0.35, M.cam.z * Math.exp(-e.deltaY * 0.0015)));
+    e.preventDefault(); fermaZoom(); const r = M.cv.getBoundingClientRect(); const px = e.clientX - r.left, py = e.clientY - r.top;
+    const prima = mondo(px, py); M.cam.z = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, M.cam.z * Math.exp(-e.deltaY * 0.0015)));
     const dopo = mondo(px, py); M.cam.x += prima.x - dopo.x; M.cam.y += prima.y - dopo.y;
   }, { passive: false });
-  $("m-centra").onclick = inquadra;
+  $("m-centra").onclick = inquadra; PO.initPosti({ M, mondo, layout, inquadra });
   setTimeout(vistaMappa, 300);
 }
 export { M, chiudiScheda, initMappa, layout, posizionaScheda, puntoCurva, raggioDi, schermo, tracciaMappa, vistaMappa };

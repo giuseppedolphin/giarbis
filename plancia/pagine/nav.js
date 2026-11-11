@@ -1,4 +1,4 @@
-// La barra comune: marchio, pagine, Artifax, Consumo, Voce e interruttore del tema. Una sola fonte, servita dal server su
+// La barra comune: marchio, pagine, menzioni («@ N»), Artifax, Consumo, Da decidere, Voce e interruttore del tema. Una sola fonte, servita dal server su
 // /nav.js e caricata in testa a ogni pagina con <script type="module" src="/nav.js">. Il nucleo mostra solo il cockpit;
 // le altre pagine arrivano dai moduli (registraVoceBarra in condivisi/barra.js, chiamata dalla loro pagina.js, che la barra
 // carica da /api/chi). Una pagina aperta da file imposta prima window.PLANCIA_BASE (vedi condivisi/api.js).
@@ -8,6 +8,8 @@ import { CSS_BARRA } from "/condivisi/barra-css.js";
 import { marchioBarra, registraVoceBarra, suBarra, vociBarra } from "/condivisi/barra.js";
 import { chi } from "/condivisi/chi.js";
 import { montaConsumo } from "/condivisi/consumo.js";
+import { montaDomande } from "/condivisi/domande.js";
+import { montaMenzioni } from "/condivisi/menzioni.js";
 import { esc } from "/condivisi/formati.js";
 import { memo } from "/condivisi/memo.js";
 import { caricaPalette, iniettaStile } from "/condivisi/stile.js";
@@ -68,7 +70,46 @@ function montaTema(nav) {
   }
 }
 
+// ---- stile --------------------------------------------------------------------------------------------
+// Lo stile Cupertino (palette-cupertino.css) si accende accanto al tema scuro o chiaro: data-stile="cupertino" su <html>, scelta in
+// localStorage (plancia.stile, che la riga in testa al cockpit legge prima del primo disegno). Per browser, non fra le impostazioni del server.
+function montaStile(nav) {
+  const bottone = document.createElement("button");
+  bottone.className = "tema stile"; bottone.type = "button"; bottone.id = "rdnav-stile"; bottone.textContent = "Aa";
+  function applica(s) {
+    if (s === "cupertino") document.documentElement.dataset.stile = "cupertino"; else delete document.documentElement.dataset.stile;
+    bottone.title = s === "cupertino" ? "Torna allo stile di base" : "Stile Cupertino";
+    bottone.setAttribute("aria-label", "Stile Cupertino");
+    bottone.setAttribute("aria-pressed", String(s === "cupertino"));
+  }
+  applica(memo.get("stile", "") === "cupertino" ? "cupertino" : "");
+  bottone.onclick = () => {
+    const s = document.documentElement.dataset.stile === "cupertino" ? "" : "cupertino";
+    applica(s); memo.set("stile", s);
+  };
+  nav.append(bottone);
+  addEventListener("storage", (e) => { if (e.key === "plancia.stile") applica(e.newValue); });
+}
+
 // ---- la barra ----------------------------------------------------------------------------------------
+// La favicon (pagine/icona/): le pagine del nucleo e dei moduli la dichiarano nella testa; una pagina che non lo fa la prende
+// da qui; aperta da file (dashboard con PLANCIA_BASE) i link della testa puntano al server. /favicon.ico risponde comunque,
+// per chi non carica la barra.
+function montaIcona() {
+  if (senzaServer) return;
+  const dichiarati = document.querySelectorAll('link[rel~="icon"], link[rel="apple-touch-icon"]');
+  if (dichiarati.length) {
+    if (BASE) for (const l of dichiarati) if (l.getAttribute("href")?.startsWith("/")) l.href = BASE + l.getAttribute("href");
+    return;
+  }
+  for (const [rel, file, tipo] of [["icon", "/favicon.ico", ""], ["icon", "/favicon.svg", "image/svg+xml"], ["apple-touch-icon", "/apple-touch-icon.png", ""]]) {
+    const l = document.createElement("link");
+    l.rel = rel; l.href = BASE + file;
+    if (tipo) l.type = tipo;
+    document.head.append(l);
+  }
+}
+
 function disegnaVoci(nav) {
   nav.querySelector(".marchio span").textContent = marchioBarra();
   nav.querySelector(".voci").innerHTML = vociBarra().map((v) => {
@@ -100,6 +141,7 @@ function montaVoce(nav, assistente) {
 async function avvia() {
   if (window.__navPlancia) return;
   window.__navPlancia = true;
+  montaIcona();
   // il guscio subito, con la sua altezza, così la pagina sotto non salta quando arrivano nome e colori
   document.documentElement.style.setProperty("--nav-h", `${ALTEZZA}px`);
   const nav = document.createElement("nav");
@@ -115,10 +157,13 @@ async function avvia() {
 
   if (!senzaServer) {
     const artifax = montaArtifax(nav.querySelector(".sp"), { inCockpit: qui === "/cockpit" });
-    montaConsumo(artifax);
+    const consumo = montaConsumo(artifax);
+    montaDomande(consumo, { assistente: c.assistente.nome }); // «Da decidere»: le domande alla persona
+    montaMenzioni(artifax); // «@ N»: i messaggi di bacheca e ponte che taggano la persona, solo se ce ne sono
   }
   montaVoce(nav, c.assistente);
   montaTema(nav);
+  montaStile(nav);
   caricaPagineModuli(c.moduli);
 }
 

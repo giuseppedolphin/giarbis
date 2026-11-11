@@ -74,6 +74,8 @@ select.sel-modello{padding:2px 24px 2px 10px;font-size:12px;background-position:
 .sonar .stato{font:500 13px/1 var(--body);color:var(--text2);height:16px;margin-top:-18px}
 .flusso{flex:1;overflow:auto;padding:8px 0 16px}
 .colonna{max-width:760px;margin:0 auto;padding:0 22px}
+.turno{display:contents} /* un turno della chat (chat.js): si ridisegna da solo, senza cambiare l'impaginazione */
+.turni-prima{display:block;margin:10px auto 14px;font-size:12.5px}
 .compositore{flex:none;padding:10px 22px 18px}
 .compositore .box{max-width:760px;margin:0 auto;display:flex;align-items:flex-end;gap:8px;background:var(--deep);border:1px solid var(--line2);border-radius:var(--r-lg);padding:8px 8px 8px 14px}
 .compositore .box:focus-within{border-color:var(--sonar-dim)}
@@ -89,6 +91,14 @@ select.sel-modello{padding:2px 24px 2px 10px;font-size:12px;background-position:
 .msg{margin:14px 0}
 .msg.utente{display:flex;justify-content:flex-end}
 .msg.utente .bolla{background:var(--panel);border:1px solid var(--line2);border-radius:var(--r-lg) var(--r-lg) 4px var(--r-lg);padding:9px 14px;max-width:85%;white-space:pre-wrap;word-wrap:break-word}
+/* «Copia» sotto la risposta (copia.js): al passaggio del mouse, sempre sull'ultima risposta, su touch e col fuoco da tastiera */
+.azioni-msg{display:flex;gap:4px;margin:-8px 0 10px}
+.copia{display:inline-flex;align-items:center;gap:5px;border:1px solid transparent;background:transparent;color:var(--muted);border-radius:var(--r-sm);padding:3px 7px;font-size:12px;cursor:pointer;opacity:0;transition:opacity .15s,color .15s,background .15s}
+.copia svg{width:14px;height:14px;flex:none}
+.turno:hover .copia,.turno:last-child .copia,.copia:focus-visible,.copia.fatto{opacity:1}
+.copia:hover,.copia:focus-visible{color:var(--text);background:var(--panel);border-color:var(--line2)}
+.copia.fatto{color:var(--text)}
+@media (hover:none){.copia{opacity:1}}
 .md{word-wrap:break-word}
 .md>*:first-child{margin-top:0}.md>*:last-child{margin-bottom:0}
 .md p{margin:0 0 .7em}
@@ -104,6 +114,8 @@ select.sel-modello{padding:2px 24px 2px 10px;font-size:12px;background-position:
 .md td:first-child{white-space:nowrap}
 .md blockquote{margin:.6em 0;padding:.1em 0 .1em 12px;border-left:3px solid var(--line2);color:var(--text2)}
 .md a{word-break:break-all}
+/* un percorso della cartella di lavoro che si apre nell'editor (percorsi.js) */
+a.pl-percorso{text-decoration:none;cursor:pointer}a.pl-percorso>*{color:var(--sonar)}a.pl-percorso:hover>*{text-decoration:underline}
 .md hr{border:0;border-top:1px solid var(--line);margin:1em 0}
 .cursore{display:inline-block;width:7px;height:1.05em;background:var(--sonar);vertical-align:-2px;margin-left:2px;animation:blink 1s steps(1) infinite}
 @keyframes blink{50%{opacity:0}}
@@ -159,6 +171,8 @@ select.sel-modello{padding:2px 24px 2px 10px;font-size:12px;background-position:
 .mappa-legenda i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:-1px}
 .l-lavora{background:var(--sonar)}.l-attende{background:var(--sand)}.l-ferma{background:var(--muted)}.l-errore{background:var(--coral)}
 .mappa-com{position:absolute;right:14px;bottom:12px;display:flex;gap:8px}
+.mappa-zoom{position:absolute;right:14px;bottom:56px;display:flex;flex-direction:column;gap:6px;z-index:5}
+.mappa-zoom .toggle{width:30px;height:30px;padding:0;font-size:17px;line-height:1;display:flex;align-items:center;justify-content:center}
 .form-mappa.aperto{
   position:absolute; right:14px; bottom:52px; width:min(380px,calc(100% - 28px)); padding:12px;
   background:rgb(var(--deep-rgb) / .97); border:1px solid var(--line2); border-radius:var(--r-md);
@@ -170,6 +184,74 @@ select.sel-modello{padding:2px 24px 2px 10px;font-size:12px;background-position:
   box-shadow:0 18px 44px rgb(var(--ombra-rgb) / calc(.5 * var(--ombra-k))); z-index:6; backdrop-filter:blur(6px); font-size:13px
 }
 .elenco-fogli[hidden]{display:none}
+.battito-pannello{
+  position:absolute; right:14px; bottom:52px; width:min(360px,calc(100% - 28px)); background:rgb(var(--deep-rgb) / .97);
+  border:1px solid var(--line2); border-radius:var(--r-md); box-shadow:0 18px 44px rgb(var(--ombra-rgb) / calc(.5 * var(--ombra-k)));
+  z-index:6; backdrop-filter:blur(6px); font-size:13px
+}
+.battito-pannello[hidden]{display:none}
+.battito-pannello h3{margin:0;padding:10px 12px;font:600 13px/1 var(--display);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:8px}
+.bt-int{display:flex;align-items:center;gap:6px;font:500 12px/1 var(--body,inherit);color:var(--text2);cursor:pointer}
+.bt-corpo{padding:8px 12px 10px}.bt-corpo p{margin:6px 0;line-height:1.4}.bt-corpo b{font-weight:600;margin-right:4px}
+.bt-m{color:var(--muted);font-size:12px}.bt-err{color:var(--coral)}
+.bt-orari{display:flex;gap:6px;align-items:center}.bt-orari label{flex:1;display:flex;gap:6px;align-items:center;color:var(--text2)}
+.bt-orari input{flex:1;min-width:0;background:transparent;color:var(--text);border:1px solid var(--line2);border-radius:6px;padding:4px 7px;font:inherit}
+.bt-corpo button{border:1px solid var(--line2);background:transparent;color:var(--text2);border-radius:6px;padding:4px 9px;font-size:12px;cursor:pointer}
+.bt-corpo button:hover{color:var(--text);background:rgb(var(--tinta-rgb) / .06)}
+.bt-azioni{display:flex;justify-content:flex-end;margin-top:8px}
+/* la checklist di primo avvio (checklist.js): una riga per voce, pallino verde, giallo o rosso */
+.checklist-pannello{width:min(440px,calc(100% - 28px))}
+#m-avvio.ck-manca{border-color:var(--coral)}
+.ck-lista{list-style:none;margin:2px -4px 0;padding:0;max-height:min(56vh,480px);overflow:auto}
+.ck-riga{display:grid;grid-template-columns:auto 1fr auto;gap:2px 9px;align-items:start;padding:6px 4px;border-radius:var(--r-sm)}
+.ck-riga p{margin:2px 0}.ck-come{color:var(--text2);font-size:12px}
+.ck-dot{width:9px;height:9px;border-radius:50%;margin-top:4px;background:var(--muted)}
+.ck-verde .ck-dot{background:rgb(var(--fatto-rgb))}.ck-giallo .ck-dot{background:var(--sand)}.ck-rosso .ck-dot{background:var(--coral)}
+.ck-spunta{display:flex;align-items:center;gap:4px;color:var(--text2);font-size:12px;cursor:pointer;white-space:nowrap}
+.ck-azioni{gap:6px}
+/* la squadra (squadra.js): una riga per agente, gli esecutori rientrati sotto il loro capo */
+.squadra-pannello{width:min(430px,calc(100% - 28px))}
+#m-squadra.sq-invito{border-style:dashed;opacity:.65}
+.sq-lista{max-height:min(52vh,460px);overflow:auto;margin:6px -4px 0}
+.sq-riga{display:grid;grid-template-columns:auto 1fr auto auto;gap:1px 8px;align-items:center;padding:5px 4px;border-radius:var(--r-sm)}
+.sq-riga:hover{background:rgb(var(--tinta-rgb) / .04)}.sq-es{padding-left:20px}
+.sq-riga .dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.sq-riga .dot.lavora,.sq-riga .dot.avvio{background:var(--sonar)}.sq-riga .dot.attende{background:var(--sand)}.sq-riga .dot.errore{background:var(--coral)}
+.bt-corpo .sq-nome{border:0;padding:0;background:none;color:var(--text);font-weight:600;font-size:13px;text-align:left;cursor:pointer}
+.bt-corpo .sq-nome:hover{background:none;text-decoration:underline}.bt-corpo .sq-nome:disabled{cursor:default;text-decoration:none}
+.sq-min{display:flex;align-items:center;gap:3px;color:var(--muted);font-size:11.5px}
+.sq-min input{width:46px;background:transparent;color:var(--text);border:1px solid var(--line2);border-radius:6px;padding:2px 4px;font:inherit;font-size:12px}
+.sq-m{grid-column:2 / -1;color:var(--muted);font-size:11.5px}
+/* la bacheca (bacheca.js): un pannello apribile a sinistra, chat di gruppo e messaggi diretti */
+.bacheca{position:absolute;left:14px;bottom:52px;width:min(400px,calc(100% - 28px));height:min(60vh,560px);display:flex;flex-direction:column;
+  background:rgb(var(--deep-rgb) / .97);border:1px solid var(--line2);border-radius:var(--r-md);box-shadow:0 18px 44px rgb(var(--ombra-rgb) / calc(.5 * var(--ombra-k)));
+  z-index:6;backdrop-filter:blur(6px);font-size:13px;resize:both;overflow:hidden;min-width:280px;min-height:220px}
+.bacheca[hidden]{display:none}
+.bc-testa{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line)}
+.bc-schede{display:flex;gap:4px;flex:1}
+.bc-schede button{border:1px solid transparent;background:transparent;color:var(--text2);border-radius:6px;padding:4px 10px;font:600 12.5px/1 var(--display);cursor:pointer}
+.bc-schede button[aria-selected="true"]{border-color:var(--line2);color:var(--text);background:rgb(var(--tinta-rgb) / .06)}
+.bc-lista{flex:1;overflow:auto;padding:6px 10px}
+.bc-msg{padding:6px 0;border-bottom:1px solid var(--line)}.bc-msg:last-child{border-bottom:0}
+.bc-da{display:flex;gap:6px;align-items:baseline;color:var(--text2);font-size:12px}.bc-da b{color:var(--text);font-weight:600}.bc-da span{margin-left:auto;color:var(--muted);font-size:11px}
+.bc-t{margin-top:2px;line-height:1.4;word-break:break-word}.bc-men{color:var(--sonar);font-weight:600}
+.bc-men-te{color:var(--coral)}
+/* le menzioni della persona (condivisi/menzioni.js): il numero corallo su pulsante e schede, il messaggio in evidenza */
+.bc-badge{display:inline-grid;place-items:center;min-width:18px;height:18px;margin-left:6px;padding:0 5px;border-radius:999px;background:var(--coral);color:#fff;font:700 11px/1 var(--display);vertical-align:1px}
+.bc-per-te{box-shadow:inset 2px 0 0 var(--coral);padding-left:8px}
+.bc-nuova{background:rgb(var(--coral-rgb) / .08)}
+.bc-vuoto,.bc-titolo{color:var(--muted);font-size:12px}
+.bc-filo{display:grid;grid-template-columns:1fr auto;gap:2px 8px;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);background:none;color:var(--text);padding:7px 2px;cursor:pointer;font:inherit}
+.bc-filo:hover{background:rgb(var(--tinta-rgb) / .04)}.bc-filo span{color:var(--muted);font-size:11px}.bc-filo em{grid-column:1 / -1;font-style:normal;color:var(--text2);font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bc-indietro{border:0;background:none;color:var(--text2);padding:2px 0;cursor:pointer;font:inherit;font-size:12px}
+.bc-scrivi{display:flex;gap:6px;padding:8px 10px;border-top:1px solid var(--line)}
+.bc-scrivi[hidden]{display:none}
+/* il ponte con l'altra plancia (ponte.js): etichette, risposta, urgente, domanda e urgente accanto a Invia */
+.pt-tag{font-style:normal;font-size:10.5px;color:var(--text2);border:1px solid var(--line2);border-radius:999px;padding:0 6px}
+.pt-urgente{box-shadow:inset 2px 0 0 var(--coral);padding-left:8px}.pt-risp{color:var(--muted);font-size:11px;margin-top:2px}
+.bc-opz{display:flex;flex-direction:column;justify-content:center;gap:2px;color:var(--text2);font-size:11px}.bc-opz[hidden]{display:none}
+.bc-opz label{display:flex;align-items:center;gap:3px;cursor:pointer}
+.bc-scrivi textarea{flex:1;resize:none;background:transparent;color:var(--text);border:1px solid var(--line2);border-radius:6px;padding:6px 8px;font:inherit;min-height:32px;max-height:120px}
 .elenco-fogli h3{margin:0;padding:10px 12px;font:600 13px/1 var(--display);border-bottom:1px solid var(--line)}
 .elenco-fogli .ec-lista{overflow:auto;padding:4px 6px 8px}
 .ec-riga{display:grid;grid-template-columns:auto 1fr auto auto;gap:2px 8px;align-items:center;padding:6px;border-radius:var(--r-sm)}
@@ -200,6 +282,9 @@ select.sel-modello{padding:2px 24px 2px 10px;font-size:12px;background-position:
 .p-timer .tm-titolo{font-size:11.5px;color:var(--muted);margin-bottom:2px}
 #sn-sotto .tm-titolo{font-size:11.5px;color:var(--muted);margin:2px 0}
 #sn-sotto{border-top:1px solid var(--line);padding-top:6px}
+.volto-foto{width:30px;height:30px;border-radius:50%;flex:none}.volto-foto[hidden]{display:none}
+/* nella scheda il volto e il nome stanno sulla prima riga, modello e stato sotto: il nome intero non ci starebbe accanto al selettore */
+.sn-testa:has(.volto-foto){flex-wrap:wrap}.sn-testa:has(.volto-foto) .volto-foto{order:-2}.scheda-nodo .sn-testa:has(.volto-foto) b{order:-1;flex:1 1 calc(100% - 80px)}.sn-testa:has(.volto-foto) .x{order:-1}
 .scheda-nodo .sn-testa{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
 .scheda-nodo .sn-testa b{font:600 15px/1.2 var(--display);flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .scheda-nodo .sn-corpo{overflow:auto;padding:8px 12px;font-size:13px;display:grid;gap:8px}
@@ -267,6 +352,10 @@ select.sel-modello{padding:2px 24px 2px 10px;font-size:12px;background-position:
   font-size:13.5px; display:none; z-index:20; max-width:90vw
 }
 .banner.on{display:block}
+/* i ruoli della squadra col loro colore (condivisi/colori.js, variabile --ag): nome, pallino, filo del banner */
+.pl-ag.nome-ag{color:var(--ag)}
+.ag-pt::before{content:"";display:inline-block;width:.55em;height:.55em;border-radius:50%;background:var(--ag);margin-right:.35em;vertical-align:.06em}
+.banner.pl-ag{border-left:4px solid var(--ag)}
 .voce-pill{
   position:fixed; left:50%; bottom:58px; transform:translateX(-50%); z-index:19; display:flex; align-items:center; gap:10px;
   max-width:min(560px,88vw); padding:9px 16px 9px 13px; border-radius:999px; background:rgb(var(--deep-rgb) / .88);
@@ -330,9 +419,10 @@ select.sel-modello{padding:2px 24px 2px 10px;font-size:12px;background-position:
 .ctx[data-livello=critico] .ctx-pieno{stroke:var(--coral)}.ctx[data-livello=critico] .ctx-n{color:var(--coral);font-weight:600}
 .ctx-c{color:var(--muted)}
 #j-contesto:not(:empty){margin-left:2px}
-/* i comandi della mappa e l'elenco «Fogli» stanno sopra i fogli (un foglio non deve coprirli), salvo con un foglio a tutto schermo o affiancato */
-.mappa-com,.elenco-fogli{z-index:5}
-.mappa:has(.foglio.piena,.foglio.affiancato) .mappa-com,.mappa:has(.foglio.piena,.foglio.affiancato) .elenco-fogli{display:none}
+/* i comandi della mappa e l'elenco «Fogli» stanno sopra i fogli (un foglio non deve coprirli), salvo con un foglio a tutto schermo o affiancato
+   e visibile: un foglio spento (hidden) che tiene la classe non li nasconde più */
+.mappa-com,.mappa-zoom,.elenco-fogli,.battito-pannello,.bacheca{z-index:5}
+.mappa:has(.foglio.piena:not([hidden]),.foglio.affiancato:not([hidden])) .mappa-com,.mappa:has(.foglio.piena:not([hidden]),.foglio.affiancato:not([hidden])) .mappa-zoom,.mappa:has(.foglio.piena:not([hidden]),.foglio.affiancato:not([hidden])) .elenco-fogli,.mappa:has(.foglio.piena:not([hidden]),.foglio.affiancato:not([hidden])) .battito-pannello,.mappa:has(.foglio.piena:not([hidden]),.foglio.affiancato:not([hidden])) .bacheca{display:none}
 /* fumetti di fine turno accanto alle sfere (fumetti.js): sopra la mappa, sotto i fogli e i comandi; si spostano da soli per non coprirli */
 .fumetti{position:absolute;inset:0;pointer-events:none;z-index:2}
 .fumetto{position:absolute;left:0;top:0;max-width:260px;display:grid;grid-template-columns:1fr auto;gap:2px 6px;align-items:start;padding:8px 8px 8px 11px;pointer-events:auto;cursor:pointer;
@@ -360,36 +450,6 @@ select.sel-modello{padding:2px 24px 2px 10px;font-size:12px;background-position:
 .fumetto.chiede[data-lato=d]::after,.fumetto.errore[data-lato=d]::after,.fumetto.di-foglio[data-lato=d]::after{border-left-width:0}
 @keyframes fumetto-entra{from{opacity:0}}
 @media (prefers-reduced-motion:reduce){.fumetto{animation:none}}
-/* il foglio delle proposte del battito e il suo fumetto accanto all'assistente (proposte.js) */
-.fumetto.proposta{border-left-color:rgb(var(--sonar-rgb))}
-.fumetto.proposta .fu-segno{color:rgb(var(--sonar-rgb))}
-.fumetto.proposta.errore{border-left-color:var(--coral)}
-.fumetto.proposta.errore .fu-segno{color:var(--coral)}
-.fumetto.proposta[data-lato=d]::after{border-left-width:0}
-.pr{display:flex;flex-direction:column;gap:10px;padding:12px;min-height:100%;box-sizing:border-box}
-.pr-card{border:1px solid var(--line2);border-left:3px solid rgb(var(--sonar-rgb));border-radius:var(--r-md);padding:10px 12px;background:rgb(var(--sonar-rgb) / .06)}
-.pr-card.urgente{border-left-color:var(--coral);background:rgb(var(--coral-rgb) / .07)}
-.pr-quando{font-size:11px;color:var(--muted);letter-spacing:.2px}
-.pr-quando b{color:var(--coral);text-transform:uppercase;font-size:10.5px}
-.pr-testo{margin:6px 0 4px;font-size:14px;line-height:1.4;color:var(--text)}
-.pr-perche{margin:0 0 8px;font-size:12.5px;line-height:1.35;color:var(--text2)}
-.pr-azioni{display:flex;gap:6px;flex-wrap:wrap}
-.pr-azioni .toggle{cursor:pointer}
-.pr-azioni .pr-si{border-color:rgb(var(--sonar-rgb) / .7);color:rgb(var(--sonar-rgb));font-weight:600}
-.pr-azioni .toggle:hover{background:rgb(var(--tinta-rgb) / .08);color:var(--text)}
-.pr-azioni .toggle:disabled{opacity:.5;cursor:default}
-.pr-vuota{padding:14px 4px}
-.pr-conta{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;text-align:center;font-size:11.5px;color:var(--text2)}
-.pr-conta span{border:1px solid var(--line);border-radius:8px;padding:6px 2px}
-.pr-conta b{display:block;font:600 17px/1.1 var(--display);color:var(--text)}
-.pr-storia{display:flex;flex-direction:column;gap:3px;font-size:12px;color:var(--text2)}
-.pr-st{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pr-st i{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;background:var(--muted)}
-.pr-st i.si{background:rgb(var(--fatto-rgb))}
-.pr-st i.no{background:var(--coral)}
-.pr-st i.ignorata{background:var(--sand)}
-.pr-battito{margin-top:auto;display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--text);border-top:1px solid var(--line);padding-top:8px;cursor:pointer}
-.pr-battito .meta{color:var(--muted);font-size:11.5px}
 /* primo avvio: la striscia «Configurazione in corso» sotto la barra comune; con --setup-h la pagina cede il suo spazio (setup.js) */
 .setup{display:flex;align-items:center;justify-content:center;gap:14px;height:var(--setup-h, 34px);padding:0 16px;background:rgb(var(--sand-rgb) / .14);
   border-bottom:1px solid rgb(var(--sand-rgb) / .5);color:var(--text);font:600 13px/1 var(--body);letter-spacing:.2px}
@@ -402,3 +462,32 @@ select.sel-modello{padding:2px 24px 2px 10px;font-size:12px;background-position:
 .voce-comando{position:absolute;left:0;top:0;z-index:4;pointer-events:none}
 .voce-comando>*{pointer-events:auto}
 .voce-comando-centro{margin-top:8px}
+/* pulizia della mappa (pulizia.js): cestino sulla sfera al passaggio del mouse, pulsante Pulisci, conferma leggera */
+.m-cestino{position:absolute;left:0;top:0;z-index:4;width:26px;height:26px;border-radius:50%;display:grid;place-items:center;padding:0;border:1px solid var(--coral-bordo);background:var(--panel);color:var(--coral);cursor:pointer}
+.m-cestino svg{width:14px;height:14px}.m-cestino[hidden]{display:none}.m-cestino:disabled{opacity:.45;cursor:not-allowed}
+.m-conferma{position:absolute;z-index:6;max-width:370px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;font-size:13px;color:var(--text2);padding:10px 12px;background:var(--panel);border:1px solid var(--line2);border-radius:var(--r-sm)}
+.m-conferma[hidden]{display:none}.m-conferma span{flex:1 1 100%}
+#m-pulisci:disabled{opacity:.45;cursor:default}
+
+/* Il terminale (terminale.js): finestra sopra la mappa, si sposta dalla testata e si ridimensiona dall'angolo */
+.terminale{position:fixed;right:24px;bottom:64px;width:min(780px,calc(100vw - 48px));height:min(460px,calc(100vh - 120px));min-width:360px;min-height:200px;
+  z-index:50;display:flex;flex-direction:column;background:var(--abyss);border:1px solid var(--line2);border-radius:var(--r-sm);resize:both;overflow:hidden;
+  box-shadow:0 18px 44px rgb(var(--ombra-rgb) / calc(.5 * var(--ombra-k)))}
+.terminale[hidden]{display:none}
+.tm-testa{display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--deep);border-bottom:1px solid var(--line);cursor:move;user-select:none;touch-action:none}
+.tm-schede{display:flex;gap:4px;flex:1;min-width:0;overflow:hidden}
+.tm-scheda{display:flex;align-items:center;border:1px solid var(--line);border-radius:999px;font-size:12px;color:var(--text2)}
+.tm-scheda.attiva{border-color:var(--sonar-dim);color:var(--sonar)}
+.tm-scheda.finita{opacity:.6}
+.tm-scheda button{background:none;border:0;color:inherit;font:inherit;cursor:pointer;padding:2px 4px 2px 10px}
+.tm-scheda .tm-x{padding:2px 9px 2px 4px}
+.tm-btn{background:none;border:1px solid var(--line);border-radius:999px;color:var(--text2);width:26px;height:24px;cursor:pointer;font-size:13px;line-height:1}
+.tm-btn:hover,.tm-scheda button:hover{color:var(--text)}
+.tm-corpo{flex:1;min-height:0;position:relative}
+.tm-shell{position:absolute;inset:4px 4px 4px 10px}
+.tm-shell[hidden]{display:none}
+/* i comandi sulla mappa (bacheca-mappa.js): il menu dell'ingranaggio sopra la sfera dell'assistente */
+.m-menu{position:absolute;z-index:7;display:flex;flex-direction:column;gap:2px;min-width:200px;padding:6px;background:rgb(var(--deep-rgb) / .97);border:1px solid var(--line2);border-radius:var(--r-md);box-shadow:0 12px 30px rgb(var(--ombra-rgb) / calc(.45 * var(--ombra-k)))}
+.m-menu[hidden]{display:none}
+.m-menu button{border:0;background:transparent;color:var(--text);text-align:left;padding:7px 10px;border-radius:var(--r-sm);font:inherit;font-size:13px;cursor:pointer}
+.m-menu button:hover{background:rgb(var(--tinta-rgb) / .08)}

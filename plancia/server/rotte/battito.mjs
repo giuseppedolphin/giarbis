@@ -1,16 +1,17 @@
 // Il battito e le proposte dell'assistente (logica in server/battito.mjs; i segnali di dominio li offrono i moduli).
+// Le proposte sono domande di tipo «proposta» (server/domande.mjs, casella «Da decidere»): /api/proposte resta con la forma di prima.
 //   GET/POST /api/battito · POST /api/battito/ora · GET/POST /api/proposte · POST /api/proposte/foglio · POST /api/proposte/:id/si|no|dopo
 import { battitoOra, impostaBattito, nuovaProposta, rispondi, statoBattito, statoProposte } from "../battito.mjs";
 import { trasmetti } from "../eventi.mjs";
 
 // Il contesto che battito.mjs riceve: come prima, più i segnali dei moduli (funzioni che danno i segnali del momento).
-export function contestoBattito({ cfg, persona, cockpit, fogli, moduli, ctxModulo }) {
+export function contestoBattito({ cfg, persona, cockpit, moduli, ctxModulo }) {
   const segnali = moduli.filter((m) => typeof m.segnaliBattito === "function")
     .map((m) => (adesso = Date.now()) => m.segnaliBattito({ ...ctxModulo(m), adesso }) || []);
-  return { root: cfg.cartella, cfg, cockpit, persona, trasmetti, assicuraFoglio: fogli.assicuraProposte, segnali };
+  return { root: cfg.cartella, cfg, cockpit, persona, trasmetti, segnali };
 }
 
-export function rotte({ cfg, ctxBattito, fogli }) {
+export function rotte({ cfg, ctxBattito }) {
   const root = cfg.cartella;
   const annuncia = (extra = {}) => trasmetti({ type: "cockpit_proposte", azione: "battito", ...extra, ...statoProposte(root) });
   return [
@@ -19,7 +20,6 @@ export function rotte({ cfg, ctxBattito, fogli }) {
       metodo: "POST", percorso: "/api/battito",
       async gestore(c) {
         const b = impostaBattito(root, await c.corpo());
-        if (b.acceso) fogli.assicuraProposte();
         annuncia();
         return { battito: b };
       },
@@ -30,7 +30,8 @@ export function rotte({ cfg, ctxBattito, fogli }) {
     },
     { metodo: "GET", percorso: "/api/proposte", gestore: () => statoProposte(root) },
     { metodo: "POST", percorso: "/api/proposte", gestore: async (c) => ({ proposta: nuovaProposta(ctxBattito, await c.corpo()) }) },
-    { metodo: "POST", percorso: "/api/proposte/foglio", gestore: () => ({ foglio: fogli.assicuraProposte() }) },
+    // il foglio delle proposte non c'è più: le proposte stanno nella casella «Da decidere» (rotta tenuta per i client di prima)
+    { metodo: "POST", percorso: "/api/proposte/foglio", gestore: () => ({ foglio: null, nota: "le proposte stanno nella casella «Da decidere»" }) },
     { metodo: "POST", percorso: /^\/api\/proposte\/([\w\-]+)\/(si|no|dopo)$/, gestore: (c) => ({ proposta: rispondi(ctxBattito, c.parametri[0], c.parametri[1]) }) },
   ];
 }

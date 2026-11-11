@@ -3,12 +3,15 @@
 // stanno in condivisi/ (api.js, memo.js, formati.js): qui non si rifanno.
 import { chi } from "/condivisi/chi.js";
 import { esc } from "/condivisi/formati.js";
+import { stileColore } from "/condivisi/colori.js";
 
 const $ = (id) => document.getElementById(id);
 const md = (t) => {
   try { return DOMPurify.sanitize(marked.parse(String(t || ""), { gfm: true, breaks: true })); } catch { return `<p>${esc(t)}</p>`; }
 };
 const STATO = { ferma: "in pausa", avvio: "si avvia", lavora: "lavora", attende: "aspetta te", errore: "errore" };
+// il pulsante «Ricarica» (chat e scheda del nodo; a turno in corso resta «Ferma»): a sessione ferma col processo vivo lo chiude, il messaggio dopo ne fa partire uno nuovo
+const RICARICA = "Chiude il processo dell'agente: al prossimo messaggio riparte con la stessa conversazione, e rilegge prompt e connettori (Gmail, Calendar…)";
 
 // ---- stato condiviso fra i moduli ---------------------------------------------------------
 // Tutti i campi sono dichiarati qui: un modulo non ne aggiunge a runtime.
@@ -22,6 +25,8 @@ const S = {
   modelli: [], // [{ alias, id, nome }] dal server (GET /api/sessioni)
   // Il turno in corso dell'assistente, per la voce (voce.js): chi l'ha aperto decide se si legge ad alta voce.
   turno: { id: 0, origine: "" },
+  // Prima di mandare un campo (chat.js): ascolto.js ci mette finisciDettatura, che chiude una dettatura in corso lì.
+  primaDiInviare: async () => {},
 };
 
 // ---- chi usa la pagina e come si chiama l'assistente ----------------------------------------
@@ -43,7 +48,8 @@ const eAssistente = (nome) => {
   return !!n && [assistente.nome, assistente.slug, ...assistente.alias].some((x) => String(x).toLowerCase() === n);
 };
 const nomeVisibile = (nome) => (eAssistente(nome) ? assistente.nome : String(nome ?? ""));
-const nomeSessione = (s) => (s.ruolo === "orchestratore" ? assistente.nome : s.nome);
+// gli agenti della squadra col nome del loro ruolo (s.squadra.nome, dal file dei ruoli)
+const nomeSessione = (s) => (s.ruolo === "orchestratore" ? assistente.nome : s.ruolo === "squadra" && s.squadra?.nome ? s.squadra.nome : s.nome);
 
 // ---- i modelli ---------------------------------------------------------------------------
 // la lista arriva dal server (plancia/server/modelli.mjs) con le sessioni
@@ -62,9 +68,11 @@ function selettoreModello(s) {
 
 // ---- banner e piccoli aiuti ----------------------------------------------------------------
 let bannerTimer;
-function mostraBanner(t, ms) {
-  const b = $("banner");
+// chi: lo slug di un ruolo della squadra, se il banner parla di un suo messaggio (il filo a sinistra nel suo colore)
+function mostraBanner(t, ms, chi = "") {
+  const b = $("banner"), st = chi ? stileColore(chi) : "";
   b.textContent = t;
+  b.classList.toggle("pl-ag", !!st); b.style.cssText = st;
   b.classList.add("on");
   clearTimeout(bannerTimer);
   if (ms) bannerTimer = setTimeout(() => b.classList.remove("on"), ms);
@@ -103,9 +111,9 @@ function leggiPalette() {
   TEMA.chiaro = document.documentElement.dataset.tema === "chiaro";
 }
 leggiPalette();
-new MutationObserver(leggiPalette).observe(document.documentElement, { attributes: true, attributeFilter: ["data-tema"] });
+new MutationObserver(leggiPalette).observe(document.documentElement, { attributes: true, attributeFilter: ["data-tema", "data-stile"] });
 
 export {
-  $, COL, NOMI_TOOL, RIDOTTO, S, STATO, TEMA, assistente, autoAltezza, caricaChi, eAssistente, fermo, istanza, leggiPalette, md,
+  $, COL, NOMI_TOOL, RICARICA, RIDOTTO, S, STATO, TEMA, assistente, autoAltezza, caricaChi, eAssistente, fermo, istanza, leggiPalette, md,
   mostraBanner, nascondiBanner, nomeModello, nomeSessione, nomeVisibile, persona, selettoreModello,
 };

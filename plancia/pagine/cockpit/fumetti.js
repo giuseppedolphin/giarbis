@@ -1,17 +1,17 @@
 // I fumetti di fine turno sulla mappa: quando un agente (o un agente di foglio, mai l'assistente) chiude un turno, accanto alla
 // sua sfera compare un fumetto con l'anteprima di cosa ha detto, ripulita dal markdown, senza chiamare nessun modello. Sostituisce
-// il pallino dei non letti e l'anteprima sotto la sfera. Resta finché la chat non si apre (nonLetti torna a zero) o finché non lo
+// l'anteprima sotto la sfera. Resta finché la chat non si apre (nonLetti torna a zero) o finché non lo
 // si chiude con la x (vale per quel turno: memo fumetto.<id> = turni). Clic = apre la chat (per un agente di foglio, foglio e
-// chat affiancati). Se l'ultima frase è una domanda porta il segno «ti chiede»; un turno finito male porta «errore».
-// Un fumetto in più, accanto all'assistente: la proposta nuova del battito (proposte.js), finché non la si guarda; clic = apre
-// il foglio delle proposte. Si piazza accanto alla sfera nel primo posto libero: non copre fogli, comandi della mappa, scheda
-// aperta, etichette, il pulsante della voce né altri fumetti.
-import { $, S, assistente } from "./comune.js";
+// chat affiancati). Se la sessione ha una domanda aperta nella casella «Da decidere» (condivisi/domande.js) porta il segno «ti chiede»;
+// un turno finito male porta «errore». Le proposte del battito stanno nella casella, col segno «?» sulla sfera dell'assistente.
+// Si piazza accanto alla sfera nel primo posto libero: non copre fogli, comandi della mappa, scheda aperta, etichette, il pulsante
+// della voce né altri fumetti.
+import { $, S, nomeSessione } from "./comune.js";
 import { apri } from "./chat.js";
 import { C } from "./fogli.js";
 import { apriAgenteFoglio } from "./agenti-foglio.js";
 import { M, raggioDi, schermo } from "./mappa.js";
-import { apriProposte, propostaDaSegnalare, segnaVista } from "./proposte.js";
+import { aperteDi } from "/condivisi/domande.js";
 import { su } from "/condivisi/eventi.js";
 import { esc } from "/condivisi/formati.js";
 import { memo } from "/condivisi/memo.js";
@@ -36,7 +36,6 @@ function anteprima(testo) {
   if (frase && frase.length <= MAX) return frase;
   const corto = t.slice(0, MAX); return t.length > MAX ? corto.replace(/\s+\S*$/, "") + "…" : corto;
 }
-const domanda = (testo) => /\?\s*$/.test(pulisci(testo).split(/(?<=[.!?])\s+/).filter(Boolean).pop() || "");
 
 // visibile: agente o agente di foglio, turno chiuso con qualcosa da leggere, chat non aperta, non chiuso con la x per questo turno
 function fumettoVisibile(s) {
@@ -44,7 +43,7 @@ function fumettoVisibile(s) {
     && s.stato !== "lavora" && s.stato !== "avvio" && memo.get(chiave(s), "") !== String(s.turni);
 }
 
-// dallo stream (ogni evento): l'ultima risposta di ogni sessione, intera, per anteprima e domanda
+// dallo stream (ogni evento): l'ultima risposta di ogni sessione, intera, per l'anteprima
 function notaFumetto(ev) {
   if (ev.type === "assistant" && !ev.parent) {
     const t = (ev.blocchi || []).filter((b) => b.type === "text").map((b) => b.text).join("\n").trim();
@@ -68,45 +67,25 @@ function crea(s) {
 // il contenuto: quando cambia lo stato delle sessioni (chat.js lo chiama dopo ogni cockpit_sessione e all'apertura di una chat)
 function aggiornaFumetti() {
   if (!$("fumetti")) return;
+  M.sporca = true; // testo e misure cambiano: la mappa ridisegna e i fumetti si riposizionano al prossimo fotogramma
   const vivi = new Set();
   for (const s of S.sessioni.values()) {
     if (!fumettoVisibile(s)) continue;
     vivi.add(s.id);
     const el = F.el.get(s.id) || crea(s);
     const testo = F.testo.get(s.id) || s.ultimo || "";
-    const errore = s.stato === "errore", chiede = !errore && domanda(testo);
+    const errore = s.stato === "errore", chiede = !errore && aperteDi(s.id).length > 0;
     el.classList.toggle("chiede", chiede); el.classList.toggle("errore", errore); el.classList.toggle("di-foglio", s.ruolo === "foglio");
     el.querySelector(".fu-segno").textContent = errore ? "errore" : chiede ? "ti chiede" : "";
     el.querySelector(".fu-t").textContent = anteprima(testo) || "Ha finito il turno.";
-    el.title = `${s.nome}: apri la chat`;
-    el.setAttribute("aria-label", `${s.nome}${chiede ? ", ti chiede" : errore ? ", errore" : ""}: ${el.querySelector(".fu-t").textContent}`);
-  }
-  const p = propostaDaSegnalare();
-  if (p) {
-    vivi.add("proposta");
-    let el = F.el.get("proposta");
-    if (!el) {
-      el = document.createElement("div");
-      el.className = "fumetto proposta";
-      el.dataset.id = "proposta";
-      el.setAttribute("role", "button");
-      el.tabIndex = 0;
-      el.innerHTML = HTML_FUMETTO;
-      el.addEventListener("click", (e) => { if (e.target.closest(".fu-x")) segnaVista(); else apriProposte(); });
-      el.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); el.click(); } });
-      $("fumetti").appendChild(el); F.el.set("proposta", el);
-    }
-    el.classList.toggle("errore", !!p.urgente);
-    const propone = `${assistente.nome} propone`;
-    el.querySelector(".fu-segno").textContent = p.urgente ? `urgente · ${propone}` : propone;
-    el.querySelector(".fu-t").textContent = anteprima(p.testo);
-    el.title = `Apri «${propone}»`;
-    el.setAttribute("aria-label", `${propone}: ${p.testo}`);
+    el.title = `${nomeSessione(s)}: apri la chat`;
+    el.setAttribute("aria-label", `${nomeSessione(s)}${chiede ? ", ti chiede" : errore ? ", errore" : ""}: ${el.querySelector(".fu-t").textContent}`);
   }
   for (const [id, el] of F.el) if (!vivi.has(id)) { el.remove(); F.el.delete(id); }
 }
 
-// il posto: ogni fotogramma della mappa, il primo libero fra destra, sinistra, sopra e sotto la sfera
+// il posto: a ogni fotogramma che la mappa ridisegna (non a ogni fotogramma del browser: a mappa ferma la tela si ridisegna di rado,
+// passoMappa in mappa.js), il primo libero fra destra, sinistra, sopra e sotto la sfera
 const sovrappone = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
 function ostacoli(base) {
   const r = [];
@@ -126,18 +105,19 @@ function ostacoli(base) {
   }
   return r;
 }
+let disegnato = -1;
 function posizionaFumetti() {
   requestAnimationFrame(posizionaFumetti);
-  const box = $("fumetti"); if (!box || !M.on || !F.el.size) return;
+  const box = $("fumetti"); if (!box || !M.on || !F.el.size || M.ultimoT === disegnato) return;
+  disegnato = M.ultimoT;
+  // prima tutte le scritture che cambiano le misure, poi tutte le letture, poi le posizioni: un solo calcolo del layout
+  for (const [id, el] of F.el) el.hidden = !M.nodi.get("a:" + id);
   const base = box.getBoundingClientRect(), occupati = ostacoli(base);
+  const misure = new Map([...F.el].filter(([, el]) => !el.hidden).map(([id, el]) => [id, { w: el.offsetWidth, h: el.offsetHeight }]));
   for (const [id, el] of F.el) {
-    const n = id === "proposta" ? [...M.nodi.values()].find((v) => v.s?.ruolo === "orchestratore") : M.nodi.get("a:" + id);
-    if (!n) {
-      el.hidden = true;
-      continue;
-    }
-    el.hidden = false;
-    const p = schermo(n.x, n.y), r = raggioDi(n) * M.cam.z, w = el.offsetWidth, h = el.offsetHeight, g = 12;
+    const n = M.nodi.get("a:" + id);
+    if (!n) continue;
+    const { w, h } = misure.get(id), p = schermo(n.x, n.y), r = raggioDi(n) * M.cam.z, g = 12;
     // dal più vicino al più lontano: accanto (a destra, poi a sinistra) a distanze crescenti e un po' più su o più giù, poi sopra e sotto l'etichetta
     const posti = [];
     for (const dx of [g, g + 36, g + 90]) for (const dy of [0, -h / 2 - 8, h / 2 + 8, -h - 16, h + 16, -1.6 * h - 24, 1.6 * h + 24])

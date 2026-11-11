@@ -1,9 +1,12 @@
 // I fogli sopra la mappa (logica in server/fogli.mjs).
 //   GET/POST /api/fogli · GET /api/fogli/:id/testo?max=N · POST /api/fogli/:id/agente · POST /api/fogli/:id/chiudi · DELETE /api/fogli/:id
-export function rotte({ fogli }) {
+import { corpoDi } from "../identita.mjs";
+
+export function rotte(nucleo) {
+  const { fogli } = nucleo;
   return [
     { metodo: "GET", percorso: "/api/fogli", gestore: () => ({ fogli: fogli.elenco() }) },
-    { metodo: "POST", percorso: "/api/fogli", gestore: async (c) => ({ foglio: fogli.crea(await c.corpo()) }) },
+    { metodo: "POST", percorso: "/api/fogli", gestore: async (c) => ({ foglio: fogli.crea(await corpoDi(c, nucleo, "da")) }) }, // chi crea lo dice il token
     {
       // il solo testo di un foglio, per chi non può leggerlo da sé (ctl.mjs foglio leggi): include i tipi dei moduli
       metodo: "GET", percorso: "/api/fogli/:id/testo",

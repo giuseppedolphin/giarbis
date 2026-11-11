@@ -7,10 +7,16 @@
 //                                      file rotto messo da parte come .rotto-<ts>; un oggetto porta il campo `versione`
 //   registro(nome)                   → un file <nome>.jsonl: aggiungi(obj), leggi({ultime}), azzera(); ruota oltre registriMB
 //   salvaFile(sottocartella, nome, contenuto) → file binari o di testo, scrittura atomica
+//   cartellaStato(sotto) · seManca(sotto, nome, contenuto) → una sottocartella creata se manca; un file scritto solo se non c'è
+//   spostaFile(sotto, nome, sottoA, nomeA) → un file spostato dentro lo stato (il vecchio imparato.md della squadra)
 //   pulisci()                        → residui .tmp-* e allegati oltre la conservazione, all'avvio
+//   temporanea(prefisso)             → una cartella nella tmp del sistema, fuori dallo stato: { dir, scrivi(nome, contenuto),
+//                                      togli() } (l'audio di un vocale da convertire e trascrivere)
 import {
   appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import { config } from "./config.mjs";
 
@@ -85,14 +91,38 @@ export function registro(nome) {
 }
 
 // Sottocartella e nome non possono uscire dallo stato: niente separatori, niente ".."
-export function salvaFile(sottocartella, nome, contenuto) {
+function dentro(sottocartella, nome) {
   const bene = (s) => /^[\w.\-]+$/.test(s) && s !== "." && s !== "..";
   const sotto = String(sottocartella || "");
   if (sotto && !sotto.split("/").every(bene)) throw new Error(`sottocartella non valida: ${sottocartella}`);
   if (!bene(String(nome))) throw new Error(`nome di file non valido: ${nome}`);
-  const file = percorsoStato(sotto, nome);
+  return percorsoStato(sotto, nome);
+}
+export function salvaFile(sottocartella, nome, contenuto) {
+  const file = dentro(sottocartella, nome);
   scriviAtomico(file, contenuto);
   return file;
+}
+
+// Una sottocartella dello stato (creata se manca) e un file scritto solo se non c'è ancora: le cartelle di lavoro della squadra.
+export function cartellaStato(sottocartella) {
+  const sotto = String(sottocartella || "");
+  if (!sotto.split("/").every((x) => /^[\w.\-]+$/.test(x) && x !== "." && x !== "..")) throw new Error(`sottocartella non valida: ${sottocartella}`);
+  const dir = percorsoStato(sotto);
+  mkdirSync(dir, { recursive: true });
+  return dir;
+}
+export function seManca(sottocartella, nome, contenuto) {
+  if (existsSync(percorsoStato(String(sottocartella || ""), String(nome)))) return false;
+  salvaFile(sottocartella, nome, contenuto);
+  return true;
+}
+
+export function spostaFile(sotto, nome, sottoA, nomeA) {
+  const da = dentro(sotto, nome), a = dentro(sottoA, nomeA);
+  mkdirSync(path.dirname(a), { recursive: true });
+  renameSync(da, a);
+  return a;
 }
 
 // All'avvio: i residui .tmp-* lasciati da un processo morto a metà scrittura (non quelli recenti, forse in corso) e gli
@@ -116,4 +146,13 @@ export function pulisci() {
     try { if (statSync(p).mtimeMs < limite) { rmSync(p, { force: true }); esito.allegati++; } } catch { /* sparito nel frattempo */ }
   });
   return esito;
+}
+
+export async function temporanea(prefisso) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), `${String(prefisso).replace(/[^\w-]/g, "")}-`));
+  return {
+    dir,
+    async scrivi(nome, contenuto) { const f = path.join(dir, path.basename(String(nome))); await writeFile(f, contenuto); return f; },
+    togli: () => rm(dir, { recursive: true, force: true }),
+  };
 }

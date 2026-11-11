@@ -29,7 +29,7 @@ function fraQuanto(ms) {
   const g = Math.round(m / 1440); return `fra ${g} giorni`;
 }
 const dettaglioTimer = (tm) => (tm.sospeso
-  ? "spento: il processo della sessione è ripartito e il suo risveglio non c'è più" : `scatta ${fraQuanto(t_ms(tm.prossimo) - Date.now())}`);
+  ? "spento: la sessione non l'ha ancora riconfermato dopo un riavvio" : `scatta ${fraQuanto(t_ms(tm.prossimo) - Date.now())}`);
 // dove sta un timer sulla mappa: attorno alla sfera della sua sessione, di lato rispetto al ramo che sale dal padre, più timer a ventaglio
 function posTimer(n, i, t) {
   const p = schermo(n.x, n.y), r = raggioDi(n) * M.cam.z, zt = Math.max(0.75, Math.min(1.25, M.cam.z));
@@ -158,7 +158,7 @@ function apriSchedaTimer(id, aggiorna) {
   const prossimo = t_ms(tm.prossimo);
   const quando = new Date(prossimo).toLocaleString("it-IT", { weekday: "short", hour: "2-digit", minute: "2-digit" });
   const stato = tm.sospeso ? "spento" : tm.unaVolta ? "una volta" : "ricorrente";
-  const nota = "Il processo di questa sessione è ripartito e i job di CronCreate non sopravvivono: la sessione deve ricrearlo, oppure toglilo da qui.";
+  const nota = "Il server è ripartito o la conversazione è nuova: la sessione lo riaccende se il job è ancora nella sua CronList, altrimenti lo ricrea; oppure toglilo da qui.";
   el.innerHTML = `<div class="sn-testa"><span style="width:9px;height:9px;border-radius:50%;border:1.5px solid rgb(${colore.join(",")})"></span>`
     + `<b>Timer di ${esc(nome)}</b><span class="meta">${stato}</span><button class="x" id="sn-x" title="Chiudi">✕</button></div>`
     + `<div class="sn-corpo"><div style="font-size:14px">${esc(tm.descrizione)}</div>`

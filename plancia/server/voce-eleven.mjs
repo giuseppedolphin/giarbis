@@ -16,7 +16,7 @@ const API = "https://api.elevenlabs.io/v1";
 
 // I modelli che hanno senso per una voce che legge frase per frase. Il primo è il predefinito.
 export const MODELLI_ELEVEN = [
-// v4 Turbo (uscito il 28/09/2026): ~100 ms, il più espressivo fra i modelli in tempo reale, stesso prezzo di Flash.
+// v4 Turbo (uscito): ~100 ms, il più espressivo fra i modelli in tempo reale, stesso prezzo di Flash.
   { id: "eleven_v4_turbo", nome: "v4 Turbo (naturale, ~100 ms)" },
   { id: "eleven_flash_v2_5", nome: "Flash v2.5 (latenza minima, ~75 ms)" },
   { id: "eleven_v4", nome: "v4 (qualità massima, più lento)" },

@@ -16,7 +16,7 @@ export function tok(n) {
 
 export const ora = (t) => new Date(t).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
 
-// Data per esteso (02/09/2026); con l'ora se il valore ne ha una.
+// Data per esteso; con l'ora se il valore ne ha una.
 export function data(t) {
   const d = new Date(t);
   if (isNaN(d)) return "";
